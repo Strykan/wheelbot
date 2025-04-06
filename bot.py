@@ -137,20 +137,24 @@ async def confirm_payment(update: Update, context: CallbackContext):
         client_id = int(update.callback_query.data.split(":")[1])
         logger.info(f"Подтверждение оплаты для клиента с ID: {client_id}")
         
-        # Сохраняем количество попыток для пользователя
+        # Получаем выбранный payment_choice для этого клиента из context
         payment_choice = context.chat_data.get("payment_choice", None)
-        attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
         
-        if attempts > 0:
-            user_attempts[client_id] = {"paid": attempts, "used": 0}
-            await context.bot.send_message(
-                chat_id=client_id,
-                text=f"Оплата прошла успешно! Теперь у вас есть {attempts} попыток.",
-                reply_markup=get_play_keyboard()  # Добавляем кнопку для игры
-            )
-            await update.callback_query.answer("Оплата подтверждена.")
+        if payment_choice:
+            attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
+            
+            if attempts > 0:
+                user_attempts[client_id] = {"paid": attempts, "used": 0}
+                await context.bot.send_message(
+                    chat_id=client_id,
+                    text=f"Оплата прошла успешно! Теперь у вас есть {attempts} попыток.",
+                    reply_markup=get_play_keyboard()  # Добавляем кнопку для игры
+                )
+                await update.callback_query.answer("Оплата подтверждена.")
+            else:
+                await update.callback_query.answer("Неизвестная сумма.")
         else:
-            await update.callback_query.answer("Неизвестная сумма.")
+            await update.callback_query.answer("Ошибка: не найдено выбранное количество попыток.")
     else:
         await update.callback_query.answer("Только администратор может подтвердить оплату.")
 
