@@ -1,8 +1,8 @@
 import logging
 import os
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
 
 # Загрузим переменные из .env
@@ -30,37 +30,55 @@ PRIZES = [
     "Подарок"
 ]
 
+# Генерация клавиатуры для кнопок
+def get_start_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Начать игру", callback_data="play")],
+        [InlineKeyboardButton("Контакты для оплаты", callback_data="payment_info")]
+    ])
+
+def get_back_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Назад", callback_data="back")]
+    ])
+
+def get_admin_confirmation_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Подтвердить оплату", callback_data="confirm_payment")],
+        [InlineKeyboardButton("Отклонить оплату", callback_data="decline_payment")]
+    ])
+
 # Команда start
 async def start(update: Update, context: CallbackContext):
-    keyboard = [
-        [InlineKeyboardButton("Начать игру", callback_data='play')],
-        [InlineKeyboardButton("Помощь", callback_data='help')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "Привет! Я — бот Колесо фортуны. Чтобы начать, нажми на кнопку ниже.",
-        reply_markup=reply_markup
+        "Привет! Я — бот Колесо фортуны. Чтобы начать, выбери одну из опций ниже.",
+        reply_markup=get_start_keyboard()
     )
 
-# Команда play (нажатие кнопки)
+# Команда play
 async def play(update: Update, context: CallbackContext):
-    keyboard = [
-        [InlineKeyboardButton("Подтвердить оплату", callback_data='confirm_payment')],
-        [InlineKeyboardButton("Отправить чек", callback_data='send_receipt')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.callback_query.edit_message_text(
-        text=f"Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
-             f"Сумма: 100 рублей\n\n"
-             f"После перевода отправь мне квитанцию и нажми на кнопку для подтверждения.",
-        reply_markup=reply_markup
+    await update.message.reply_text(
+        "Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
+        "Сумма: 100 рублей\n\n"
+        "После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!",
+        reply_markup=get_back_keyboard()
+    )
+
+# Команда с реквизитами для оплаты
+async def payment_info(update: Update, context: CallbackContext):
+    await update.message.reply_text(
+        "Переведи деньги на следующие реквизиты:\n"
+        "Сумма: 100 рублей\n\n"
+        "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!",
+        reply_markup=get_back_keyboard()
     )
 
 # Функция для вращения колеса фортуны
 async def spin_wheel(update: Update, context: CallbackContext):
     prize = random.choice(PRIZES)  # Выбираем случайный приз
     await update.message.reply_text(
-        f"🎉 Поздравляем! Ты выиграл: {prize} 🎉"
+        f"🎉 Поздравляем! Ты выиграл: {prize} 🎉",
+        reply_markup=get_back_keyboard()
     )
 
 # Обработчик квитанций (фото или документы)
@@ -70,48 +88,55 @@ async def handle_receipt(update: Update, context: CallbackContext):
         await context.bot.send_photo(
             chat_id=ADMIN_ID,
             photo=update.message.photo[-1].file_id,
-            caption=caption
+            caption=caption,
+            reply_markup=get_admin_confirmation_keyboard()  # Кнопки для подтверждения
         )
-        await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.")
+        await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.", reply_markup=get_back_keyboard())
     elif update.message.document:
         caption = f"Чек от @{update.effective_user.username} (ID: {update.effective_user.id})"
         await context.bot.send_document(
             chat_id=ADMIN_ID,
             document=update.message.document.file_id,
-            caption=caption
+            caption=caption,
+            reply_markup=get_admin_confirmation_keyboard()  # Кнопки для подтверждения
         )
-        await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.")
+        await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.", reply_markup=get_back_keyboard())
     else:
-        await update.message.reply_text("Пожалуйста, отправьте чек о платеже.")
+        await update.message.reply_text("Пожалуйста, отправьте чек о платеже.", reply_markup=get_back_keyboard())
 
-# Обработчик команды подтверждения оплаты (администратором)
+# Обработчик подтверждения или отклонения оплаты (администратором)
 async def confirm_payment(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if user_id == int(ADMIN_ID):  # Проверка, что это администратор
-        if context.args:
-            message = ' '.join(context.args)
-            if message.lower() == 'подтвердить':
-                await update.message.reply_text(f"Оплата подтверждена. Пользователь получит попытки!")
-                # Запускаем колесо фортуны после подтверждения
-                await spin_wheel(update, context)
-            else:
-                await update.message.reply_text("Неверная команда. Используйте /confirm_payment подтверждение.")
-        else:
-            await update.message.reply_text("Введите команду /confirm_payment с аргументами для подтверждения.")
+        await update.message.reply_text("Оплата подтверждена! Пользователь получит попытки.", reply_markup=get_back_keyboard())
+        # Запускаем колесо фортуны после подтверждения
+        await spin_wheel(update, context)
+    else:
+        await update.message.reply_text("Только администратор может подтвердить оплату.", reply_markup=get_back_keyboard())
 
-# Обработчик нажатий кнопок (callback queries)
+async def decline_payment(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id == int(ADMIN_ID):  # Проверка, что это администратор
+        await update.message.reply_text("Оплата отклонена. Попробуйте снова.", reply_markup=get_back_keyboard())
+    else:
+        await update.message.reply_text("Только администратор может отклонить оплату.", reply_markup=get_back_keyboard())
+
+# Обработчик inline кнопок
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
     
-    if query.data == 'play':
+    # Обработка нажатия на кнопки
+    if query.data == "play":
         await play(update, context)
-    elif query.data == 'help':
-        await query.edit_message_text("Помощь: Переведите 100 рублей, отправьте квитанцию и нажмите на кнопку для подтверждения оплаты.")
-    elif query.data == 'send_receipt':
-        await query.edit_message_text("Отправьте квитанцию для проверки.")
-    elif query.data == 'confirm_payment':
-        await query.edit_message_text("Пожалуйста, отправьте квитанцию для подтверждения оплаты.")
+    elif query.data == "payment_info":
+        await payment_info(update, context)
+    elif query.data == "back":
+        await start(update, context)
+    elif query.data == "confirm_payment":
+        await confirm_payment(update, context)
+    elif query.data == "decline_payment":
+        await decline_payment(update, context)
 
 # Ошибки
 async def error(update: Update, context: CallbackContext):
@@ -124,9 +149,10 @@ def main():
 
     # Обработчики
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button))  # Обработка нажатий кнопок
+    application.add_handler(CommandHandler("confirm_payment", confirm_payment))  # Убираем pass_args
     application.add_handler(MessageHandler(filters.PHOTO, handle_receipt))  # Обработка фото
-    application.add_handler(MessageHandler(filters.Document(), handle_receipt))  # Обработка документов
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_receipt))  # Обработка документов
+    application.add_handler(CallbackQueryHandler(button))  # Обработчик inline кнопок
     application.add_error_handler(error)
 
     # Запуск бота
