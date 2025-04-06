@@ -215,7 +215,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(play, pattern="play"))
     application.add_handler(CallbackQueryHandler(handle_payment_choice, pattern="pay_"))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.DOCUMENT.ALL, handle_receipt))  # Исправленный фильтр
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))  # Исправленный фильтр
     application.add_handler(CallbackQueryHandler(confirm_payment, pattern="confirm_payment"))
     application.add_handler(CallbackQueryHandler(decline_payment, pattern="decline_payment"))
     application.add_handler(CallbackQueryHandler(spin_wheel, pattern="spin_wheel"))
