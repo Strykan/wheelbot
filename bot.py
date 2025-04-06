@@ -72,21 +72,21 @@ async def spin_wheel(update: Update, context: CallbackContext):
     # Удаляем предыдущее сообщение
     await update.callback_query.message.delete()
 
-    # Анимация вращения (выводим призы поочередно)
-    await update.callback_query.message.reply_text(
+    # Отправляем новое сообщение, что начинается вращение
+    result_message = await update.callback_query.message.reply_text(
         "🔄 Вращаю колесо... Пожалуйста, подождите..."
     )
 
     # Пройдемся по всем призам и покажем их с задержкой
     for prize in PRIZES:
-        await update.callback_query.message.edit_text(
+        await result_message.edit_text(
             f"Вращение... \nПриз: {prize}"
         )
         await asyncio.sleep(0.5)  # Задержка перед показом следующего приза
 
     # После того как все призы были выведены, показываем финальный результат
     final_prize = random.choice(PRIZES)  # Выбираем случайный приз
-    await update.callback_query.message.edit_text(
+    await result_message.edit_text(
         f"🎉 Поздравляем! Ты выиграл: {final_prize} 🎉",
         reply_markup=get_play_keyboard()  # Кнопка для продолжения
     )
