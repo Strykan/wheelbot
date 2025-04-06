@@ -126,29 +126,36 @@ async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()  # Подтверждаем нажатие кнопки
     
+    # Обработка нажатия на кнопки
     if query.data == "play":
-        await query.message.reply_text(  # Отправляем текст в тот же чат
-            "Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
-            "Сумма: 100 рублей\n\n"
-            "После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!",
-            reply_markup=get_back_keyboard()
-        )
+        await play(update, context)
     elif query.data == "payment_info":
-        await query.message.reply_text(  # Отправляем текст в тот же чат
-            "Переведи деньги на следующие реквизиты:\n"
-            "Сумма: 100 рублей\n\n"
-            "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!",
-            reply_markup=get_back_keyboard()
-        )
+        await payment_info(update, context)
     elif query.data == "back":
-        await query.message.reply_text(  # Отправляем текст в тот же чат
-            "Привет! Я — бот Колесо фортуны. Чтобы начать, выбери одну из опций ниже.",
-            reply_markup=get_start_keyboard()
-        )
+        await start(update, context)
     elif query.data == "confirm_payment":
-        await confirm_payment(update, context)
+        # Проверим, есть ли сообщение с чеком
+        if query.message.reply_to_message:
+            # Это сообщение с чеком
+            await query.message.reply_to_message.reply_text(
+                "Оплата подтверждена! Пользователь получит попытки.", reply_markup=get_back_keyboard()
+            )
+            # Запускаем колесо фортуны после подтверждения
+            await spin_wheel(update, context)
+        else:
+            # Обработка случая, когда нет сообщения с чеком (неожиданный случай)
+            await query.message.reply_text("Ошибка: сообщение с чеком не найдено.", reply_markup=get_back_keyboard())
+
     elif query.data == "decline_payment":
-        await decline_payment(update, context)
+        # Проверим, есть ли сообщение с чеком
+        if query.message.reply_to_message:
+            # Это сообщение с чеком
+            await query.message.reply_to_message.reply_text(
+                "Оплата отклонена. Попробуйте снова.", reply_markup=get_back_keyboard()
+            )
+        else:
+            # Обработка случая, когда нет сообщения с чеком (неожиданный случай)
+            await query.message.reply_text("Ошибка: сообщение с чеком не найдено.", reply_markup=get_back_keyboard())
 
 # Ошибки
 async def error(update: Update, context: CallbackContext):
