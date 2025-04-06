@@ -3,7 +3,7 @@ import random
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram import ParseMode
+from telegram.constants import ParseMode
 
 # Токен бота
 BOT_TOKEN = os.getenv("7999095829:AAGkWkCIg8WuoqMnkyPHtl-QREB4T2bYKkU")
