@@ -233,7 +233,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button))
     
     # Обработчик квитанций
-    application.add_handler(MessageHandler(filters.PHOTO | filters.DOCUMENT, handle_receipt))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
     
     # Обработчик ошибок
     application.add_error_handler(error)
