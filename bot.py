@@ -131,7 +131,7 @@ async def handle_receipt(update: Update, context: CallbackContext):
                     photo=update.message.photo[-1].file_id,
                     caption=caption,
                     reply_markup=InlineKeyboardMarkup([ 
-                        [InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user_id}"),
+                        [InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user_id}:{payment_choice}"),
                          InlineKeyboardButton("Отклонить оплату", callback_data=f"decline_payment:{user_id}")]
                     ])
                 )
@@ -141,7 +141,7 @@ async def handle_receipt(update: Update, context: CallbackContext):
                     document=update.message.document.file_id,
                     caption=caption,
                     reply_markup=InlineKeyboardMarkup([ 
-                        [InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user_id}"),
+                        [InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user_id}:{payment_choice}"),
                          InlineKeyboardButton("Отклонить оплату", callback_data=f"decline_payment:{user_id}")]
                     ])
                 )
@@ -155,29 +155,25 @@ async def handle_receipt(update: Update, context: CallbackContext):
 async def confirm_payment(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if user_id == ADMIN_ID:  # Проверка, что это администратор
-        # Получаем user_id клиента из callback_data
-        client_id = int(update.callback_query.data.split(":")[1])
-        logger.info(f"Подтверждение оплаты для клиента с ID: {client_id}")
+        # Получаем user_id клиента и количество попыток из callback_data
+        client_id, payment_choice = update.callback_query.data.split(":")[1:]
+        client_id = int(client_id)
+        payment_choice = str(payment_choice)
+        logger.info(f"Подтверждение оплаты для клиента с ID: {client_id} и выбор попыток: {payment_choice}")
 
-        # Получаем выбранный payment_choice для этого клиента из context
-        payment_choice = context.user_data.get("payment_choice", None)
+        attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
         
-        if payment_choice:
-            attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
-            
-            if attempts > 0:
-                # Сохраняем оплату пользователя в базе данных
-                save_user_attempts(client_id, attempts, 0)
-                await context.bot.send_message(
-                    chat_id=client_id,
-                    text=f"Оплата прошла успешно! Теперь у вас есть {attempts} попыток.",
-                    reply_markup=get_play_keyboard(client_id)  # Добавляем кнопку для игры
-                )
-                await update.callback_query.answer("Оплата подтверждена.")
-            else:
-                await update.callback_query.answer("Неизвестная сумма.")
+        if attempts > 0:
+            # Сохраняем оплату пользователя в базе данных
+            save_user_attempts(client_id, attempts, 0)
+            await context.bot.send_message(
+                chat_id=client_id,
+                text=f"Оплата прошла успешно! Теперь у вас есть {attempts} попыток.",
+                reply_markup=get_play_keyboard(client_id)  # Добавляем кнопку для игры
+            )
+            await update.callback_query.answer("Оплата подтверждена.")
         else:
-            await update.callback_query.answer("Ошибка: не найдено выбранное количество попыток.")
+            await update.callback_query.answer("Неизвестная сумма.")
     else:
         await update.callback_query.answer("Только администратор может подтвердить оплату.")
 
