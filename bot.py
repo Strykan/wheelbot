@@ -18,7 +18,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Подключение к базе данных
-conn = sqlite3.connect('user_data.db', check_same_thread=False)  # Добавил check_same_thread=False для многозадачности
+conn = sqlite3.connect('user_data.db')
 cursor = conn.cursor()
 
 # Создание таблицы, если она еще не существует
@@ -215,7 +215,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(play, pattern="play"))
     application.add_handler(CallbackQueryHandler(handle_payment_choice, pattern="pay_"))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.DOCUMENT, handle_receipt))
+    application.add_handler(MessageHandler(filters.Photo | filters.Document.ALL, handle_receipt))
     application.add_handler(CallbackQueryHandler(confirm_payment, pattern="confirm_payment"))
     application.add_handler(CallbackQueryHandler(decline_payment, pattern="decline_payment"))
     application.add_handler(CallbackQueryHandler(spin_wheel, pattern="spin_wheel"))
