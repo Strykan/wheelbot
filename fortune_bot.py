@@ -5,7 +5,19 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 import os
-BOT_TOKEN = os.getenv("7999095829:AAGkWkCIg8WuoqMnkyPHtl-QREB4T2bYKkU")
+from telegram import Update
+from telegram.ext import Application, CommandHandler
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+async def start(update: Update, context):
+    await update.message.reply_text("Привет! Я твой бот!")
+
+if __name__ == '__main__':
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.run_polling()
+
 
 SECTORS = [
     "Выигрыш 100 рублей!",
