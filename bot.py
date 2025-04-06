@@ -56,7 +56,7 @@ async def play(update: Update, context: CallbackContext):
     # Удаляем предыдущее сообщение
     await update.callback_query.message.delete()
 
-    # Создаем клавиатуру с предложением выбора количества попыток
+    # Отправляем сообщение, которое позволяет пользователю выбрать количество попыток
     keyboard = [
         [InlineKeyboardButton("1 попытка — 50 рублей", callback_data="pay_1")],
         [InlineKeyboardButton("3 попытки — 130 рублей", callback_data="pay_3")],
@@ -204,7 +204,9 @@ async def button(update: Update, context: CallbackContext):
     await query.answer()  # Подтверждаем нажатие кнопки
     
     # Обработка нажатий на кнопки с оплатой
-    if query.data.startswith("pay_"):
+    if query.data == "play":
+        await play(update, context)
+    elif query.data.startswith("pay_"):
         choice = query.data.split("_")[1]
         context.chat_data["payment_choice"] = choice  # Сохраняем выбор пользователя
         await handle_payment_choice(update, context)
