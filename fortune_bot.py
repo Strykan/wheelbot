@@ -4,7 +4,8 @@ import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-BOT_TOKEN = '7999095829:AAGkWkCIg8WuoqMnkyPHtl-QREB4T2bYKkU'
+import os
+BOT_TOKEN = os.getenv("7999095829:AAGkWkCIg8WuoqMnkyPHtl-QREB4T2bYKkU")
 
 SECTORS = [
     "Выигрыш 100 рублей!",
