@@ -1,7 +1,7 @@
 import logging
 import os
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot, ParseMode
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
 import asyncio  # Для задержек
