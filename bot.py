@@ -18,7 +18,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Подключение к базе данных
-conn = sqlite3.connect('user_data.db')
+conn = sqlite3.connect('user_data.db', check_same_thread=False)  # Добавил check_same_thread=False для многозадачности
 cursor = conn.cursor()
 
 # Создание таблицы, если она еще не существует
@@ -100,7 +100,7 @@ async def handle_payment_choice(update: Update, context: CallbackContext):
         await update.callback_query.message.delete()
         await update.callback_query.message.reply_text(
             f"Вы выбрали {choice} попыток за {price} рублей.\n"
-            "После перевода отправьте мне квитанцию о платеже, и я дам вам попытки!"
+            "После перевода отправьте мне квитанцию о платеже, и я дам вам попытки!",
         )
         context.user_data["payment_choice"] = choice
     else:
@@ -142,7 +142,7 @@ async def handle_receipt(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Пожалуйста, отправьте чек о платеже.")
 
-# Обработчик подтверждения или отклонения оплаты (администратором)
+# Обработчик подтверждения оплаты (администратором)
 async def confirm_payment(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if user_id == ADMIN_ID:
@@ -150,12 +150,14 @@ async def confirm_payment(update: Update, context: CallbackContext):
         logger.info(f"Подтверждение оплаты для клиента с ID: {client_id}")
 
         payment_choice = context.user_data.get("payment_choice", None)
+        logger.info(f"Выбранное количество попыток: {payment_choice}")
         
         if payment_choice:
             attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
+            logger.info(f"Попытки, которые будут добавлены: {attempts}")
             
             if attempts > 0:
-                save_user_attempts(client_id, attempts, 0)
+                save_user_attempts(client_id, attempts, 0)  # Сохраняем данные о попытках в базе данных
                 await context.bot.send_message(
                     chat_id=client_id,
                     text=f"Оплата прошла успешно! Теперь у вас есть {attempts} попыток.",
@@ -163,12 +165,16 @@ async def confirm_payment(update: Update, context: CallbackContext):
                 )
                 await update.callback_query.answer("Оплата подтверждена.")
             else:
+                logger.error("Ошибка: не найдено выбранное количество попыток.")
                 await update.callback_query.answer("Неизвестная сумма.")
         else:
+            logger.error("Ошибка: не найдено значение payment_choice.")
             await update.callback_query.answer("Ошибка: не найдено выбранное количество попыток.")
     else:
+        logger.error("Ошибка: Только администратор может подтвердить оплату.")
         await update.callback_query.answer("Только администратор может подтвердить оплату.")
 
+# Обработчик отклонения оплаты (администратором)
 async def decline_payment(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if user_id == ADMIN_ID:
@@ -197,29 +203,24 @@ async def spin_wheel(update: Update, context: CallbackContext):
             f"Колесо крутано! Результат: {result}",
             reply_markup=get_play_disabled_keyboard()
         )
-
-        await update.callback_query.answer()
     else:
         await update.callback_query.message.reply_text(
-            "У вас нет попыток для игры. Купите их, чтобы начать.",
-            reply_markup=get_play_keyboard(user_id)
+            "У вас нет оплаченных попыток. Пожалуйста, купите попытки, чтобы продолжить."
         )
-        await update.callback_query.answer()
 
 # Основная функция для запуска бота
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(play, pattern="^play$"))
-    application.add_handler(CallbackQueryHandler(handle_payment_choice, pattern="^pay_"))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
-    application.add_handler(CallbackQueryHandler(confirm_payment, pattern="^confirm_payment:"))
-    application.add_handler(CallbackQueryHandler(decline_payment, pattern="^decline_payment:"))
-    application.add_handler(CallbackQueryHandler(spin_wheel, pattern="^spin_wheel$"))
+    application.add_handler(CallbackQueryHandler(play, pattern="play"))
+    application.add_handler(CallbackQueryHandler(handle_payment_choice, pattern="pay_"))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.DOCUMENT, handle_receipt))
+    application.add_handler(CallbackQueryHandler(confirm_payment, pattern="confirm_payment"))
+    application.add_handler(CallbackQueryHandler(decline_payment, pattern="decline_payment"))
+    application.add_handler(CallbackQueryHandler(spin_wheel, pattern="spin_wheel"))
 
     application.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
