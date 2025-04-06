@@ -1,1 +1,1 @@
-web: python fortune_bot.py
+web: python bot.py
