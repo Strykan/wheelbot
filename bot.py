@@ -58,7 +58,7 @@ async def start(update: Update, context: CallbackContext):
 
 # Команда play
 async def play(update: Update, context: CallbackContext):
-    await update.message.reply_text(
+    await update.callback_query.message.reply_text(
         "Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
         "Сумма: 100 рублей\n\n"
         "После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!",
@@ -67,7 +67,7 @@ async def play(update: Update, context: CallbackContext):
 
 # Команда с реквизитами для оплаты
 async def payment_info(update: Update, context: CallbackContext):
-    await update.message.reply_text(
+    await update.callback_query.message.reply_text(
         "Переведи деньги на следующие реквизиты:\n"
         "Сумма: 100 рублей\n\n"
         "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!",
@@ -77,7 +77,7 @@ async def payment_info(update: Update, context: CallbackContext):
 # Функция для вращения колеса фортуны
 async def spin_wheel(update: Update, context: CallbackContext):
     prize = random.choice(PRIZES)  # Выбираем случайный приз
-    await update.message.reply_text(
+    await update.callback_query.message.reply_text(
         f"🎉 Поздравляем! Ты выиграл: {prize} 🎉",
         reply_markup=get_back_keyboard()
     )
