@@ -193,6 +193,25 @@ async def decline_payment(update: Update, context: CallbackContext):
     else:
         await update.callback_query.answer("Только администратор может отклонить оплату.")
 
+# Обработчик inline кнопок
+async def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()  # Подтверждаем нажатие кнопки
+    
+    # Обработка нажатий на кнопки с оплатой
+    if query.data == "play":
+        await play(update, context)
+    elif query.data.startswith("pay_"):
+        choice = query.data.split("_")[1]
+        context.chat_data["payment_choice"] = choice  # Сохраняем выбор пользователя
+        await handle_payment_choice(update, context)
+    elif query.data == "spin_wheel":
+        await spin_wheel(update, context)
+    elif query.data.startswith("confirm_payment"):
+        await confirm_payment(update, context)
+    elif query.data.startswith("decline_payment"):
+        await decline_payment(update, context)
+
 # Основная функция для запуска бота
 def main():
     # Создаем объект бота
