@@ -1,7 +1,7 @@
 import logging
 import os
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
 import asyncio  # Для задержек
@@ -31,7 +31,7 @@ PRIZES = [
     "Подарок"
 ]
 
-# Для отслеживания, кто уже использовал свою попытку
+# Для отслеживания, кто уже использовал свои попытки
 user_attempts = {}
 
 # Генерация клавиатуры для кнопок
@@ -70,17 +70,6 @@ async def play(update: Update, context: CallbackContext):
         "После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!"
     )
 
-# Команда с реквизитами для оплаты
-async def payment_info(update: Update, context: CallbackContext):
-    # Удаляем предыдущее сообщение
-    await update.callback_query.message.delete()
-
-    await update.callback_query.message.reply_text(
-        "Переведи деньги на следующие реквизиты:\n"
-        "Сумма: 100 рублей\n\n"
-        "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!"
-    )
-
 # Функция для вращения колеса фортуны с поочередным выводом призов
 async def spin_wheel(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
@@ -91,6 +80,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
         user_attempts[user_id] -= 1
         if user_attempts[user_id] == 0:
             del user_attempts[user_id]
+        
         # Убираем кнопку "Крутить колесо", если попытки закончились
         keyboard = get_play_disabled_keyboard() if user_attempts.get(user_id, 0) == 0 else get_play_keyboard()
         
@@ -131,7 +121,7 @@ async def handle_receipt(update: Update, context: CallbackContext):
             chat_id=ADMIN_ID,
             photo=update.message.photo[-1].file_id,
             caption=caption,
-            reply_markup=InlineKeyboardMarkup([[
+            reply_markup=InlineKeyboardMarkup([[ 
                 InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user.id}"),
                 InlineKeyboardButton("Отклонить оплату", callback_data=f"decline_payment:{user.id}")
             ]])
@@ -143,7 +133,7 @@ async def handle_receipt(update: Update, context: CallbackContext):
             chat_id=ADMIN_ID,
             document=update.message.document.file_id,
             caption=caption,
-            reply_markup=InlineKeyboardMarkup([[
+            reply_markup=InlineKeyboardMarkup([[ 
                 InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user.id}"),
                 InlineKeyboardButton("Отклонить оплату", callback_data=f"decline_payment:{user.id}")
             ]])
