@@ -223,7 +223,7 @@ def main():
     # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.DOCUMENT, handle_receipt))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
 
     # Запуск бота
     application.run_polling()
