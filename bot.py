@@ -1,6 +1,5 @@
 import logging
 import os
-import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
@@ -17,22 +16,6 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))  # ID администратора для 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Призовые сектора Колеса фортуны
-PRIZES = [
-    "100 рублей",
-    "Бесплатная попытка",
-    "5 бесплатных попыток",
-    "10 рублей",
-    "Конфетка",
-    "Ничего",
-    "5 рублей",
-    "Скидка 10% на след. игру",
-    "Подарок"
-]
-
-# Для отслеживания количества оплаченных и использованных попыток
-user_attempts = {}
 
 # Подключение к базе данных
 conn = sqlite3.connect('user_data.db')
@@ -154,7 +137,7 @@ async def confirm_payment(update: Update, context: CallbackContext):
         # Получаем user_id клиента из callback_data
         client_id = int(update.callback_query.data.split(":")[1])
         logger.info(f"Подтверждение оплаты для клиента с ID: {client_id}")
-        
+
         # Получаем выбранный payment_choice для этого клиента из context
         payment_choice = context.chat_data.get("payment_choice", None)
         
