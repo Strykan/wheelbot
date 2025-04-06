@@ -31,8 +31,8 @@ PRIZES = [
     "Подарок"
 ]
 
-# Для отслеживания, кто уже использовал свою попытку
-user_attempts = {}
+# Для отслеживания количества оплаченных и использованных попыток
+user_attempts = {}  # {user_id: {"paid": int, "used": int}}
 
 # Генерация клавиатуры для кнопок
 def get_start_keyboard():
@@ -42,7 +42,7 @@ def get_play_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Крутить колесо", callback_data="spin_wheel")]])
 
 def get_play_disabled_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Вы уже использовали попытку", callback_data="spin_wheel_disabled")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Вы уже использовали все попытки", callback_data="spin_wheel_disabled")]])
 
 # Команда start
 async def start(update: Update, context: CallbackContext):
@@ -94,22 +94,19 @@ async def handle_payment_choice(update: Update, context: CallbackContext):
 async def spin_wheel(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     
-    # Проверяем, если пользователь уже использовал свою попытку
-    if user_id in user_attempts and user_attempts[user_id]:
-        # Отправляем сообщение, что попытка уже использована
+    # Проверяем, есть ли у пользователя оплаченные попытки и оставшиеся попытки
+    if user_id not in user_attempts or user_attempts[user_id]["paid"] <= user_attempts[user_id]["used"]:
+        # Отправляем сообщение, что попытки закончились
         await update.callback_query.message.reply_text(
-            "Вы уже использовали свою попытку! Повторно крутить колесо нельзя.",
+            "Вы не оплатили попытки или они все уже использованы.",
             reply_markup=get_play_disabled_keyboard()
         )
         return
 
-    # Устанавливаем, что пользователь использовал попытку
-    user_attempts[user_id] = True
+    # Увеличиваем счетчик использованных попыток
+    user_attempts[user_id]["used"] += 1
 
-    # Удаляем предыдущее сообщение
-    await update.callback_query.message.delete()
-
-    # Отправляем новое сообщение, что начинается вращение
+    # Отправляем сообщение, что начинается вращение
     result_message = await update.callback_query.message.reply_text(
         "🔄 Вращаю колесо... Пожалуйста, подождите..."
     )
@@ -128,7 +125,14 @@ async def spin_wheel(update: Update, context: CallbackContext):
         reply_markup=get_play_disabled_keyboard()  # Кнопка для продолжения будет заблокирована
     )
 
-# Обработчик квитанций (фото или документы)
+    # Покажем количество оставшихся попыток
+    remaining_attempts = user_attempts[user_id]["paid"] - user_attempts[user_id]["used"]
+    await update.callback_query.message.reply_text(
+        f"Осталось попыток: {remaining_attempts}",
+        reply_markup=get_play_keyboard() if remaining_attempts > 0 else get_play_disabled_keyboard()
+    )
+
+# Обработка квитанций (фото или документы)
 async def handle_receipt(update: Update, context: CallbackContext):
     user = update.effective_user
     if update.message.photo or update.message.document:
@@ -173,14 +177,20 @@ async def confirm_payment(update: Update, context: CallbackContext):
     if user_id == ADMIN_ID:  # Проверка, что это администратор
         # Получаем user_id клиента из callback_data
         client_id = int(update.callback_query.data.split(":")[1])
-        # Отправляем сообщение клиенту о подтверждении
-        await context.bot.send_message(
-            chat_id=client_id,
-            text="Оплата прошла успешно! Теперь вы можете крутить колесо фортуны.",
-            reply_markup=get_play_keyboard()  # Добавляем кнопку для игры
-        )
-        # Подтверждаем администратору
-        await update.callback_query.answer("Оплата подтверждена.")
+        # Сохраняем количество попыток для пользователя
+        payment_choice = context.chat_data.get("payment_choice", None)
+        attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
+        
+        if attempts > 0:
+            user_attempts[client_id] = {"paid": attempts, "used": 0}
+            await context.bot.send_message(
+                chat_id=client_id,
+                text=f"Оплата прошла успешно! Теперь у вас есть {attempts} попыток.",
+                reply_markup=get_play_keyboard()  # Добавляем кнопку для игры
+            )
+            await update.callback_query.answer("Оплата подтверждена.")
+        else:
+            await update.callback_query.answer("Неизвестная сумма.")
     else:
         await update.callback_query.answer("Только администратор может подтвердить оплату.")
 
