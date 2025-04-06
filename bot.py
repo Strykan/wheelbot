@@ -1,7 +1,8 @@
 import logging
 import os
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot, ParseMode
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+import telegram  # Добавлено для использования ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
 
