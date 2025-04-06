@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
@@ -34,15 +35,33 @@ PRIZES = [
 # Для отслеживания количества оплаченных и использованных попыток
 user_attempts = {}
 
+# Подключение к базе данных
+conn = sqlite3.connect('user_data.db')
+cursor = conn.cursor()
+
+# Создание таблицы, если она еще не существует
+cursor.execute('''CREATE TABLE IF NOT EXISTS user_attempts
+                  (user_id INTEGER PRIMARY KEY, paid INTEGER, used INTEGER)''')
+conn.commit()
+
 # Генерация клавиатуры для кнопок
 def get_start_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Начать игру", callback_data="play")]])
 
-def get_play_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Крутить колесо", callback_data="spin_wheel")]])
+def get_play_keyboard(user_id):
+    if user_attempts.get(user_id, {}).get('paid', 0) > 0:
+        return InlineKeyboardMarkup([[InlineKeyboardButton("Крутить колесо", callback_data="spin_wheel")]])
+    else:
+        return InlineKeyboardMarkup([[InlineKeyboardButton("Попробуйте купить попытки", callback_data="play")]])
 
 def get_play_disabled_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Вы уже использовали все попытки", callback_data="spin_wheel_disabled")]])
+
+# Сохранение данных о пользователе в базе данных
+def save_user_attempts(user_id, paid_attempts, used_attempts):
+    cursor.execute('INSERT OR REPLACE INTO user_attempts (user_id, paid, used) VALUES (?, ?, ?)',
+                   (user_id, paid_attempts, used_attempts))
+    conn.commit()
 
 # Команда start
 async def start(update: Update, context: CallbackContext):
@@ -144,11 +163,11 @@ async def confirm_payment(update: Update, context: CallbackContext):
             attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
             
             if attempts > 0:
-                user_attempts[client_id] = {"paid": attempts, "used": 0}
+                save_user_attempts(client_id, attempts, 0)
                 await context.bot.send_message(
                     chat_id=client_id,
                     text=f"Оплата прошла успешно! Теперь у вас есть {attempts} попыток.",
-                    reply_markup=get_play_keyboard()  # Добавляем кнопку для игры
+                    reply_markup=get_play_keyboard(client_id)  # Добавляем кнопку для игры
                 )
                 await update.callback_query.answer("Оплата подтверждена.")
             else:
@@ -184,25 +203,41 @@ async def button(update: Update, context: CallbackContext):
         await play(update, context)
     elif query.data.startswith("pay_"):
         choice = query.data.split("_")[1]
-        context.chat_data["payment_choice"] = choice  # Сохраняем выбор пользователя
+        context.chat_data["payment_choice"] = choice  # Сохраняем выбор
         await handle_payment_choice(update, context)
     elif query.data == "spin_wheel":
-        await spin_wheel(update, context)
-    elif query.data.startswith("confirm_payment"):
-        await confirm_payment(update, context)
-    elif query.data.startswith("decline_payment"):
-        await decline_payment(update, context)
+        # Игра Колесо фортуны
+        user_id = update.effective_user.id
+        if user_attempts.get(user_id, {}).get('paid', 0) > 0:
+            prize = random.choice(PRIZES)
+            await query.edit_message_text(f"Поздравляем! Вы выиграли: {prize}")
+            # Уменьшаем количество использованных попыток
+            user_attempts[user_id]["used"] += 1
+            save_user_attempts(user_id, user_attempts[user_id]["paid"], user_attempts[user_id]["used"])
+        else:
+            await query.edit_message_text("У вас нет попыток. Попробуйте купить новые.")
+            await query.edit_message_reply_markup(reply_markup=get_play_disabled_keyboard())
 
-# Основная функция для запуска бота
+# Ошибка
+async def error(update: Update, context: CallbackContext):
+    logger.warning(f"Update {update} caused error {context.error}")
+
 def main():
-    # Создаем объект бота
+    # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Регистрируем обработчики
+    # Команды
     application.add_handler(CommandHandler("start", start))
+    
+    # Обработчик кнопок
     application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
-
+    
+    # Обработчик квитанций
+    application.add_handler(MessageHandler(filters.PHOTO | filters.DOCUMENT, handle_receipt))
+    
+    # Обработчик ошибок
+    application.add_error_handler(error)
+    
     # Запуск бота
     application.run_polling()
 
