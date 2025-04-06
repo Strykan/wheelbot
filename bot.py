@@ -18,20 +18,39 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Подключение к базе данных
-conn = sqlite3.connect('user_data.db')
-cursor = conn.cursor()
+def get_db_connection():
+    return sqlite3.connect('user_data.db')
 
 # Создание таблицы, если она еще не существует
-cursor.execute('''CREATE TABLE IF NOT EXISTS user_attempts
-                  (user_id INTEGER PRIMARY KEY, paid INTEGER, used INTEGER)''')
-conn.commit()
+def init_db():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS user_attempts
+                          (user_id INTEGER PRIMARY KEY, paid INTEGER, used INTEGER, pending_payment INTEGER)''')
+        conn.commit()
 
 # Генерация клавиатуры для кнопок
 def get_start_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Начать игру", callback_data="play")]])
 
+# Получаем данные о пользователе из базы данных
+def get_user_attempts(user_id):
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT paid, used, pending_payment FROM user_attempts WHERE user_id = ?", (user_id,))
+            result = cursor.fetchone()
+        if result:
+            return {"paid": result[0], "used": result[1], "pending_payment": result[2]}
+        else:
+            return {"paid": 0, "used": 0, "pending_payment": 0}
+    except sqlite3.DatabaseError as e:
+        logger.error(f"Ошибка базы данных: {e}")
+        return {"paid": 0, "used": 0, "pending_payment": 0}
+
 def get_play_keyboard(user_id):
-    if user_attempts.get(user_id, {}).get('paid', 0) > 0:
+    user_data = get_user_attempts(user_id)
+    if user_data['paid'] > 0:
         return InlineKeyboardMarkup([[InlineKeyboardButton("Крутить колесо", callback_data="spin_wheel")]])
     else:
         return InlineKeyboardMarkup([[InlineKeyboardButton("Попробуйте купить попытки", callback_data="play")]])
@@ -40,24 +59,40 @@ def get_play_disabled_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Вы уже использовали все попытки", callback_data="spin_wheel_disabled")]])
 
 # Сохранение данных о пользователе в базе данных
-def save_user_attempts(user_id, paid_attempts, used_attempts):
-    cursor.execute('INSERT OR REPLACE INTO user_attempts (user_id, paid, used) VALUES (?, ?, ?)',
-                   (user_id, paid_attempts, used_attempts))
-    conn.commit()
+def save_user_attempts(user_id, paid_attempts, used_attempts, pending_payment=0):
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('INSERT OR REPLACE INTO user_attempts (user_id, paid, used, pending_payment) VALUES (?, ?, ?, ?)',
+                           (user_id, paid_attempts, used_attempts, pending_payment))
+            conn.commit()
+    except sqlite3.DatabaseError as e:
+        logger.error(f"Ошибка базы данных: {e}")
 
 # Команда start
 async def start(update: Update, context: CallbackContext):
-    await update.message.reply_text(
-        "Привет! Я — бот Колесо фортуны. Чтобы начать, выбери одну из опций ниже.",
-        reply_markup=get_start_keyboard()
-    )
+    user_data = get_user_attempts(update.effective_user.id)
+    
+    if user_data['paid'] > 0:
+        # Если есть оплаченные попытки, сразу предложить крутить колесо
+        await update.message.reply_text(
+            "У вас есть оплаченные попытки! Начнем?",
+            reply_markup=get_play_keyboard(update.effective_user.id)
+        )
+    else:
+        await update.message.reply_text(
+            "Привет! Я — бот Колесо фортуны. Чтобы начать, выбери одну из опций ниже.",
+            reply_markup=get_start_keyboard()
+        )
 
 # Команда play
 async def play(update: Update, context: CallbackContext):
-    # Удаляем предыдущее сообщение
-    await update.callback_query.message.delete()
+    try:
+        await update.callback_query.message.delete()
+    except Exception as e:
+        logger.error(f"Ошибка при удалении сообщения: {e}")
 
-    # Отправляем сообщение, которое позволяет пользователю выбрать количество попыток
+    # Отправляем сообщение с предложением купить попытки
     keyboard = [
         [InlineKeyboardButton("1 попытка — 50 рублей", callback_data="pay_1")],
         [InlineKeyboardButton("3 попытки — 130 рублей", callback_data="pay_3")],
@@ -87,18 +122,23 @@ async def handle_payment_choice(update: Update, context: CallbackContext):
             "После перевода отправьте мне квитанцию о платеже, и я дам вам попытки!"
         )
         # Сохраняем выбранный вариант для дальнейшего использования
-        context.chat_data["payment_choice"] = choice
+        context.user_data["payment_choice"] = choice
     else:
         await update.callback_query.message.reply_text("Неверный выбор.")
 
-# Обработка квитанций (фото или документы)
+# Обработчик квитанций (фото или документы)
 async def handle_receipt(update: Update, context: CallbackContext):
     user = update.effective_user
     if update.message.photo or update.message.document:
-        # Извлекаем ID пользователя и сумму для оплаты
+        # Проверим, если есть неподтвержденная квитанция
         user_id = user.id
-        # Сначала получим выбранную сумму из context
-        payment_choice = context.chat_data.get("payment_choice", None)
+        user_data = get_user_attempts(user_id)
+        if user_data["pending_payment"] == 1:
+            await update.message.reply_text("У вас уже есть незавершенная квитанция. Пожалуйста, подождите подтверждения.")
+            return
+
+        # Если все в порядке, продолжаем
+        payment_choice = context.user_data.get("payment_choice", None)
         if payment_choice:
             amount = {"1": 50, "3": 130, "5": 200, "10": 350}.get(payment_choice, 0)
             caption = f"Чек от @{user.username} (ID: {user_id}). Оплачено: {amount} рублей."
@@ -119,11 +159,13 @@ async def handle_receipt(update: Update, context: CallbackContext):
                     chat_id=ADMIN_ID,
                     document=update.message.document.file_id,
                     caption=caption,
-                    reply_markup=InlineKeyboardMarkup([
+                    reply_markup=InlineKeyboardMarkup([ 
                         [InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user_id}"),
                          InlineKeyboardButton("Отклонить оплату", callback_data=f"decline_payment:{user_id}")]
                     ])
                 )
+            # Устанавливаем флаг ожидающего подтверждения
+            save_user_attempts(user_id, 0, 0, 1)
             await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.")
         else:
             await update.message.reply_text("Неизвестная сумма, повторите попытку.")
@@ -139,7 +181,7 @@ async def confirm_payment(update: Update, context: CallbackContext):
         logger.info(f"Подтверждение оплаты для клиента с ID: {client_id}")
 
         # Получаем выбранный payment_choice для этого клиента из context
-        payment_choice = context.chat_data.get("payment_choice", None)
+        payment_choice = context.user_data.get("payment_choice", None)
         
         if payment_choice:
             attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
@@ -156,57 +198,4 @@ async def confirm_payment(update: Update, context: CallbackContext):
             else:
                 await update.callback_query.answer("Неизвестная сумма.")
         else:
-            await update.callback_query.answer("Ошибка: не найдено выбранное количество попыток.")
-    else:
-        await update.callback_query.answer("Только администратор может подтвердить оплату.")
-
-async def decline_payment(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id == ADMIN_ID:  # Проверка, что это администратор
-        # Получаем user_id клиента из callback_data
-        client_id = int(update.callback_query.data.split(":")[1])
-        logger.info(f"Отклонение оплаты для клиента с ID: {client_id}")
-        
-        # Отправляем сообщение клиенту об отклонении
-        await context.bot.send_message(
-            chat_id=client_id,
-            text="Оплата отклонена. Попробуйте снова."
-        )
-        await update.callback_query.answer("Оплата отклонена.")
-    else:
-        await update.callback_query.answer("Только администратор может отклонить оплату.")
-
-# Обработчик inline кнопок
-async def button(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()  # Подтверждаем нажатие кнопки
-    
-    # Обработка нажатий на кнопки с оплатой
-    if query.data == "play":
-        await play(update, context)
-    elif query.data.startswith("pay_"):
-        choice = query.data.split("_")[1]
-        context.chat_data["payment_choice"] = choice  # Сохраняем выбор пользователя
-        await handle_payment_choice(update, context)
-    elif query.data == "spin_wheel":
-        await spin_wheel(update, context)
-    elif query.data.startswith("confirm_payment"):
-        await confirm_payment(update, context)
-    elif query.data.startswith("decline_payment"):
-        await decline_payment(update, context)
-
-# Основная функция для запуска бота
-def main():
-    # Создаем объект бота
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Регистрируем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
-
-    # Запуск бота
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
+            await update.callback_query.answer("Неизвестная сумма.")
