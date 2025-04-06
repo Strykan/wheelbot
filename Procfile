@@ -1,0 +1,1 @@
+web: python fortune_bot.py
