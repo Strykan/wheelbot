@@ -1,9 +1,10 @@
 import logging
 import os
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot, ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
+import asyncio  # Для задержек
 
 # Загрузим переменные из .env
 load_dotenv()
@@ -46,6 +47,9 @@ async def start(update: Update, context: CallbackContext):
 
 # Команда play
 async def play(update: Update, context: CallbackContext):
+    # Удаляем предыдущее сообщение
+    await update.callback_query.message.delete()
+
     await update.callback_query.message.reply_text(
         "Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
         "Сумма: 100 рублей\n\n"
@@ -54,17 +58,37 @@ async def play(update: Update, context: CallbackContext):
 
 # Команда с реквизитами для оплаты
 async def payment_info(update: Update, context: CallbackContext):
+    # Удаляем предыдущее сообщение
+    await update.callback_query.message.delete()
+
     await update.callback_query.message.reply_text(
         "Переведи деньги на следующие реквизиты:\n"
         "Сумма: 100 рублей\n\n"
         "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!"
     )
 
-# Функция для вращения колеса фортуны
+# Функция для вращения колеса фортуны с поочередным выводом призов
 async def spin_wheel(update: Update, context: CallbackContext):
-    prize = random.choice(PRIZES)  # Выбираем случайный приз
+    # Удаляем предыдущее сообщение
+    await update.callback_query.message.delete()
+
+    # Анимация вращения (выводим призы поочередно)
     await update.callback_query.message.reply_text(
-        f"🎉 Поздравляем! Ты выиграл: {prize} 🎉"
+        "🔄 Вращаю колесо... Пожалуйста, подождите..."
+    )
+
+    # Пройдемся по всем призам и покажем их с задержкой
+    for prize in PRIZES:
+        await update.callback_query.message.edit_text(
+            f"Вращение... \nПриз: {prize}"
+        )
+        await asyncio.sleep(0.5)  # Задержка перед показом следующего приза
+
+    # После того как все призы были выведены, показываем финальный результат
+    final_prize = random.choice(PRIZES)  # Выбираем случайный приз
+    await update.callback_query.message.edit_text(
+        f"🎉 Поздравляем! Ты выиграл: {final_prize} 🎉",
+        reply_markup=get_play_keyboard()  # Кнопка для продолжения
     )
 
 # Обработчик квитанций (фото или документы)
