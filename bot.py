@@ -159,7 +159,6 @@ async def confirm_payment(update: Update, context: CallbackContext):
             reply_markup=get_play_keyboard()  # Добавляем кнопку для игры
         )
         # Оповещаем администратора
-        await update.callback_query.message.reply_text("Оплата подтверждена!")
         await update.callback_query.answer("Оплата подтверждена.")
     else:
         await update.callback_query.answer("Только администратор может подтвердить оплату.")
