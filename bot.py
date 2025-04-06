@@ -31,12 +31,18 @@ PRIZES = [
     "Подарок"
 ]
 
+# Для отслеживания, кто уже использовал свою попытку
+user_attempts = {}
+
 # Генерация клавиатуры для кнопок
 def get_start_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Начать игру", callback_data="play")]])
 
 def get_play_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Крутить колесо", callback_data="spin_wheel")]])
+
+def get_play_disabled_keyboard():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Вы уже использовали попытку", callback_data="spin_wheel_disabled")]])
 
 # Команда start
 async def start(update: Update, context: CallbackContext):
@@ -69,6 +75,20 @@ async def payment_info(update: Update, context: CallbackContext):
 
 # Функция для вращения колеса фортуны с поочередным выводом призов
 async def spin_wheel(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    
+    # Проверяем, если пользователь уже использовал свою попытку
+    if user_id in user_attempts and user_attempts[user_id]:
+        # Отправляем сообщение, что попытка уже использована
+        await update.callback_query.message.reply_text(
+            "Вы уже использовали свою попытку! Повторно крутить колесо нельзя.",
+            reply_markup=get_play_disabled_keyboard()
+        )
+        return
+
+    # Устанавливаем, что пользователь использовал попытку
+    user_attempts[user_id] = True
+
     # Удаляем предыдущее сообщение
     await update.callback_query.message.delete()
 
@@ -88,7 +108,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
     final_prize = random.choice(PRIZES)  # Выбираем случайный приз
     await result_message.edit_text(
         f"🎉 Поздравляем! Ты выиграл: {final_prize} 🎉",
-        reply_markup=get_play_keyboard()  # Кнопка для продолжения
+        reply_markup=get_play_disabled_keyboard()  # Кнопка для продолжения будет заблокирована
     )
 
 # Обработчик квитанций (фото или документы)
