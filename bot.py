@@ -1,7 +1,7 @@
 import logging
 import os
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
 
@@ -39,32 +39,45 @@ def get_back_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Назад", callback_data="back")]])
 
 def get_admin_confirmation_keyboard(user_id):
-    return InlineKeyboardMarkup([[InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user_id}"),
-                                  InlineKeyboardButton("Отклонить оплату", callback_data=f"decline_payment:{user_id}")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Подтвердить оплату", callback_data=f"confirm_payment:{user_id}")],
+                                 [InlineKeyboardButton("Отклонить оплату", callback_data=f"decline_payment:{user_id}")]])
 
 # Команда start
 async def start(update: Update, context: CallbackContext):
-    await update.message.reply_text("Привет! Я — бот Колесо фортуны. Чтобы начать, выбери одну из опций ниже.",
-                                    reply_markup=get_start_keyboard())
+    if update.message:  # Проверка, что сообщение существует
+        await update.message.reply_text(
+            "Привет! Я — бот Колесо фортуны. Чтобы начать, выбери одну из опций ниже.",
+            reply_markup=get_start_keyboard()
+        )
 
 # Команда play
 async def play(update: Update, context: CallbackContext):
-    await update.message.reply_text("Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
-                                    "Сумма: 100 рублей\n\n"
-                                    "После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!",
-                                    reply_markup=get_back_keyboard())
+    if update.message:  # Проверка, что сообщение существует
+        await update.message.reply_text(
+            "Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
+            "Сумма: 100 рублей\n\n"
+            "После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!",
+            reply_markup=get_back_keyboard()
+        )
 
 # Команда с реквизитами для оплаты
 async def payment_info(update: Update, context: CallbackContext):
-    await update.message.reply_text("Переведи деньги на следующие реквизиты:\n"
-                                    "Сумма: 100 рублей\n\n"
-                                    "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!",
-                                    reply_markup=get_back_keyboard())
+    if update.message:  # Проверка, что сообщение существует
+        await update.message.reply_text(
+            "Переведи деньги на следующие реквизиты:\n"
+            "Сумма: 100 рублей\n\n"
+            "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!",
+            reply_markup=get_back_keyboard()
+        )
 
 # Функция для вращения колеса фортуны
 async def spin_wheel(update: Update, context: CallbackContext):
-    prize = random.choice(PRIZES)  # Выбираем случайный приз
-    await update.message.reply_text(f"🎉 Поздравляем! Ты выиграл: {prize} 🎉", reply_markup=get_back_keyboard())
+    if update.message:  # Проверка, что сообщение существует
+        prize = random.choice(PRIZES)  # Выбираем случайный приз
+        await update.message.reply_text(
+            f"🎉 Поздравляем! Ты выиграл: {prize} 🎉",
+            reply_markup=get_back_keyboard()
+        )
 
 # Обработчик квитанций (фото или документы)
 async def handle_receipt(update: Update, context: CallbackContext):
@@ -77,7 +90,8 @@ async def handle_receipt(update: Update, context: CallbackContext):
             caption=caption,
             reply_markup=get_admin_confirmation_keyboard(user.id)  # Кнопки для подтверждения
         )
-        await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.", reply_markup=get_back_keyboard())
+        if update.message:  # Проверка, что сообщение существует
+            await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.", reply_markup=get_back_keyboard())
     elif update.message.document:
         caption = f"Чек от @{user.username} (ID: {user.id})"
         await context.bot.send_document(
@@ -86,40 +100,42 @@ async def handle_receipt(update: Update, context: CallbackContext):
             caption=caption,
             reply_markup=get_admin_confirmation_keyboard(user.id)  # Кнопки для подтверждения
         )
-        await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.", reply_markup=get_back_keyboard())
+        if update.message:  # Проверка, что сообщение существует
+            await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.", reply_markup=get_back_keyboard())
     else:
-        await update.message.reply_text("Пожалуйста, отправьте чек о платеже.", reply_markup=get_back_keyboard())
+        if update.message:  # Проверка, что сообщение существует
+            await update.message.reply_text("Пожалуйста, отправьте чек о платеже.", reply_markup=get_back_keyboard())
 
 # Обработчик подтверждения или отклонения оплаты (администратором)
 async def confirm_payment(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if user_id == ADMIN_ID:  # Проверка, что это администратор
-        # Извлекаем user_id клиента из callback_data
-        client_id = int(update.callback_query.data.split(":")[1])
-        # Отправляем сообщение пользователю о подтверждении
-        await context.bot.send_message(client_id, "Оплата подтверждена! Ты можешь начать игру.")
+        # Получаем user_id клиента из callback_data
+        client_id = int(context.args[0])
+        if update.message:  # Проверка, что сообщение существует
+            await update.message.reply_text("Оплата подтверждена! Пользователь получит попытки.", reply_markup=get_back_keyboard())
         # Запускаем колесо фортуны после подтверждения
         await spin_wheel(update, context)
-        await update.message.reply_text("Оплата подтверждена! Пользователь получит попытки.", reply_markup=get_back_keyboard())
     else:
-        await update.message.reply_text("Только администратор может подтвердить оплату.", reply_markup=get_back_keyboard())
+        if update.message:  # Проверка, что сообщение существует
+            await update.message.reply_text("Только администратор может подтвердить оплату.", reply_markup=get_back_keyboard())
 
 async def decline_payment(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if user_id == ADMIN_ID:  # Проверка, что это администратор
-        # Извлекаем user_id клиента из callback_data
-        client_id = int(update.callback_query.data.split(":")[1])
-        # Отправляем сообщение пользователю о отклонении
-        await context.bot.send_message(client_id, "Оплата отклонена. Попробуйте снова.")
-        await update.message.reply_text("Оплата отклонена. Попробуйте снова.", reply_markup=get_back_keyboard())
+        # Получаем user_id клиента из callback_data
+        client_id = int(context.args[0])
+        if update.message:  # Проверка, что сообщение существует
+            await update.message.reply_text("Оплата отклонена. Попробуйте снова.", reply_markup=get_back_keyboard())
     else:
-        await update.message.reply_text("Только администратор может отклонить оплату.", reply_markup=get_back_keyboard())
+        if update.message:  # Проверка, что сообщение существует
+            await update.message.reply_text("Только администратор может отклонить оплату.", reply_markup=get_back_keyboard())
 
 # Обработчик inline кнопок
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()  # Подтверждаем нажатие кнопки
-    
+
     # Обработка нажатия на кнопки
     if query.data == "play":
         await play(update, context)
