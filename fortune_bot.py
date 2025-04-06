@@ -1,149 +1,110 @@
-import random
-import json
-import asyncio
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-
 import os
+import random
+import requests
 from telegram import Update
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import ParseMode
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Токен бота
+BOT_TOKEN = os.getenv("7999095829:AAGkWkCIg8WuoqMnkyPHtl-QREB4T2bYKkU")
 
-async def start(update: Update, context):
-    await update.message.reply_text("Привет! Я твой бот!")
+# Админ для проверки оплаты
+ADMIN_ID = 271722022  # Замените на свой ID в Telegram
 
-if __name__ == '__main__':
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.run_polling()
+# Данные для игры
+prizes = {
+    1: "Приз 1: 10 монет",
+    2: "Приз 2: 20 монет",
+    3: "Приз 3: 50 монет",
+    4: "Приз 4: 100 монет",
+    5: "Приз 5: Бесплатная попытка",
+    6: "Приз 6: Джекпот! 500 монет"
+}
 
-
-SECTORS = [
-    "Выигрыш 100 рублей!",
-    "Попробуй ещё раз",
-    "Проигрыш",
-    "Сюрприз!",
-    "Двойной шанс",
-    "Ничего",
-    "Ты победитель дня!",
-    "Подарок от Вселенной"
+# Эмодзи сектора колеса
+wheel_sectors = [
+    "🔴", "🟢", "🟡", "🔵", "🟠", "🟣"
 ]
 
-STATS_FILE = 'fortune_stats.json'
+# Хранилище пользователей и их попыток
+user_attempts = {}
 
-# Загрузка статистики из файла
-def load_stats():
-    try:
-        with open(STATS_FILE, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+# Функция для отправки анимации вращения колеса
+async def spin_wheel_animation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    animation_url = "https://media.giphy.com/media/xT1XGV9Dbb1Jd13ZpS/giphy.gif"
+    await update.message.reply_animation(animation_url, caption="Кручу колесо фортуны...")
 
-# Сохранение статистики в файл
-def save_stats(stats):
-    with open(STATS_FILE, 'w') as f:
-        json.dump(stats, f, ensure_ascii=False, indent=2)
-
-# Обновление статистики
-def update_user_stats(user_id, result):
-    stats = load_stats()
-    user_stats = stats.get(str(user_id), {})
-    user_stats[result] = user_stats.get(result, 0) + 1
-    stats[str(user_id)] = user_stats
-    save_stats(stats)
-
-# Команда /start
+# Стартовая команда
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Напиши /spin чтобы крутануть колесо фортуны!")
+    await update.message.reply_text(
+        "Привет! Я твой бот для игры в Колесо Фортуны! Чтобы начать, нужно оплатить попытку. "
+        "Отправь мне чек для подтверждения оплаты. После подтверждения ты получишь возможность крутить колесо!"
+    )
 
-# Команда /spin с "анимацией" и сохранением статистики
-async def spin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Обработка чека и добавление попыток
+async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if not use_attempt(user_id):
-        await update.message.reply_text("У тебя нет попыток. Купи их с помощью команды /buy.")
-        return
-
-    message = await update.message.reply_text("Колесо начинает крутиться...")
-
-    user_sectors = get_user_sectors(user_id)
-    sectors = user_sectors if user_sectors else DEFAULT_SECTORS
-
-    # Анимация
-    for i in range(10):
-        current = random.choice(sectors)
-        await message.edit_text(f"Колесо: {current}")
-        await asyncio.sleep(0.3 + i * 0.05)
-
-    final_result = random.choice(sectors)
-    await message.edit_text(f"Колесо остановилось! Выпадает: {final_result}")
-
-    update_user_stats(user_id, final_result)
-
-# Команда /stats — показывает статистику пользователя
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    stats = load_stats().get(user_id, {})
-    if not stats:
-        await update.message.reply_text("У тебя пока нет статистики. Попробуй крутануть колесо!")
+    if update.message.photo or update.message.document:
+        # Отправка чека админу для подтверждения
+        caption = f"Чек от @{update.effective_user.username} (ID: {user_id})"
+        if update.message.photo:
+            await context.bot.send_photo(
+                chat_id=ADMIN_ID,
+                photo=update.message.photo[-1].file_id,
+                caption=caption
+            )
+        elif update.message.document:
+            await context.bot.send_document(
+                chat_id=ADMIN_ID,
+                document=update.message.document.file_id,
+                caption=caption
+            )
+        await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.")
     else:
-        lines = [f"{key}: {value}" for key, value in stats.items()]
-        await update.message.reply_text("Твоя статистика:\n" + "\n".join(lines))
+        await update.message.reply_text("Пожалуйста, отправь чек о платеже.")
 
-# Основной запуск
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+# Подтверждение оплаты администратором
+async def approve_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return await update.message.reply_text("У вас нет прав для подтверждения.")
+    
+    user_id = int(context.args[0])
+    user_attempts[user_id] = 3  # Например, даём 3 попытки
+    await context.bot.send_message(user_id, "Оплата подтверждена! Вы получили 3 попытки.")
+    await update.message.reply_text(f"Оплата для пользователя {user_id} подтверждена. Он получил 3 попытки.")
 
+# Функция для выполнения вращения
+async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id not in user_attempts or user_attempts[user_id] <= 0:
+        return await update.message.reply_text("У вас нет попыток. Пожалуйста, оплатите их.")
+
+    # Уменьшаем количество попыток
+    user_attempts[user_id] -= 1
+
+    # Отправляем анимацию вращения
+    await spin_wheel_animation(update, context)
+
+    # Симулируем вращение и определяем сектор
+    wheel_result = random.randint(0, 5)  # Вращаем колесо
+    prize = prizes[wheel_result + 1]  # Приз по результату сектора
+
+    # Отправляем результат
+    await update.message.reply_text(f"Колесо остановилось на секторе {wheel_sectors[wheel_result]}! {prize}")
+    await update.message.reply_text(f"У вас осталось {user_attempts[user_id]} попыток.")
+
+# Обработчик команд
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    # Обработчики команд
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("spin", spin))
-    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.DOCUMENT, handle_receipt))
+    app.add_handler(CommandHandler("approve", approve_payment))
+    app.add_handler(CommandHandler("spin", spin_wheel))
 
-    print("Бот запущен!")
     app.run_polling()
 
-ATTEMPTS_FILE = 'attempts.json'
-
-def load_attempts():
-    return load_json(ATTEMPTS_FILE)
-
-def save_attempts(data):
-    save_json(ATTEMPTS_FILE, data)
-
-def get_attempts(user_id):
-    attempts = load_attempts()
-    return attempts.get(str(user_id), 0)
-
-def add_attempts(user_id, count):
-    attempts = load_attempts()
-    user_id = str(user_id)
-    attempts[user_id] = attempts.get(user_id, 0) + count
-    save_attempts(attempts)
-
-def use_attempt(user_id):
-    attempts = load_attempts()
-    user_id = str(user_id)
-    if attempts.get(user_id, 0) > 0:
-        attempts[user_id] -= 1
-        save_attempts(attempts)
-        return True
-    return False
-
-async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    try:
-        count = int(context.args[0])
-        if count <= 0:
-            raise ValueError
-        add_attempts(user_id, count)
-        await update.message.reply_text(f"Ты получил {count} попыток! У тебя теперь {get_attempts(user_id)}.")
-    except (IndexError, ValueError):
-        await update.message.reply_text("Напиши, сколько попыток хочешь купить. Например:\n/buy 3")
-
-async def attempts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    count = get_attempts(user_id)
-    await update.message.reply_text(f"У тебя {count} попыток.")
-
-app.add_handler(CommandHandler("buy", buy))
-app.add_handler(CommandHandler("attempts", attempts))
-
+if __name__ == '__main__':
+    main()
