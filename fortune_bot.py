@@ -59,20 +59,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Команда /spin с "анимацией" и сохранением статистики
 async def spin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not use_attempt(user_id):
+        await update.message.reply_text("У тебя нет попыток. Купи их с помощью команды /buy.")
+        return
+
     message = await update.message.reply_text("Колесо начинает крутиться...")
 
-    # Симуляция вращения
-    for i in range(10):  # количество "шагов"
-        current = random.choice(SECTORS)
-        await message.edit_text(f"Колесо: {current}")
-        await asyncio.sleep(0.3 + i * 0.05)  # замедление к концу
+    user_sectors = get_user_sectors(user_id)
+    sectors = user_sectors if user_sectors else DEFAULT_SECTORS
 
-    # Итог
-    final_result = random.choice(SECTORS)
+    # Анимация
+    for i in range(10):
+        current = random.choice(sectors)
+        await message.edit_text(f"Колесо: {current}")
+        await asyncio.sleep(0.3 + i * 0.05)
+
+    final_result = random.choice(sectors)
     await message.edit_text(f"Колесо остановилось! Выпадает: {final_result}")
 
-    # Обновление статистики
-    user_id = update.effective_user.id
     update_user_stats(user_id, final_result)
 
 # Команда /stats — показывает статистику пользователя
@@ -95,3 +100,50 @@ if __name__ == '__main__':
 
     print("Бот запущен!")
     app.run_polling()
+
+ATTEMPTS_FILE = 'attempts.json'
+
+def load_attempts():
+    return load_json(ATTEMPTS_FILE)
+
+def save_attempts(data):
+    save_json(ATTEMPTS_FILE, data)
+
+def get_attempts(user_id):
+    attempts = load_attempts()
+    return attempts.get(str(user_id), 0)
+
+def add_attempts(user_id, count):
+    attempts = load_attempts()
+    user_id = str(user_id)
+    attempts[user_id] = attempts.get(user_id, 0) + count
+    save_attempts(attempts)
+
+def use_attempt(user_id):
+    attempts = load_attempts()
+    user_id = str(user_id)
+    if attempts.get(user_id, 0) > 0:
+        attempts[user_id] -= 1
+        save_attempts(attempts)
+        return True
+    return False
+
+async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    try:
+        count = int(context.args[0])
+        if count <= 0:
+            raise ValueError
+        add_attempts(user_id, count)
+        await update.message.reply_text(f"Ты получил {count} попыток! У тебя теперь {get_attempts(user_id)}.")
+    except (IndexError, ValueError):
+        await update.message.reply_text("Напиши, сколько попыток хочешь купить. Например:\n/buy 3")
+
+async def attempts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    count = get_attempts(user_id)
+    await update.message.reply_text(f"У тебя {count} попыток.")
+
+app.add_handler(CommandHandler("buy", buy))
+app.add_handler(CommandHandler("attempts", attempts))
+
