@@ -1,10 +1,10 @@
 import logging
 import os
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, CallbackQueryHandler, filters
 from dotenv import load_dotenv
-import asyncio  # Для задержек
+import asyncio
 
 # Загрузим переменные из .env
 load_dotenv()
@@ -32,7 +32,7 @@ PRIZES = [
 ]
 
 # Для отслеживания количества оплаченных и использованных попыток
-user_attempts = {}  # {user_id: {"paid": int, "used": int}}
+user_attempts = {}
 
 # Генерация клавиатуры для кнопок
 def get_start_keyboard():
@@ -90,48 +90,6 @@ async def handle_payment_choice(update: Update, context: CallbackContext):
     else:
         await update.callback_query.message.reply_text("Неверный выбор.")
 
-# Функция для вращения колеса фортуны с поочередным выводом призов
-async def spin_wheel(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    
-    # Проверяем, есть ли у пользователя оплаченные попытки и оставшиеся попытки
-    if user_id not in user_attempts or user_attempts[user_id]["paid"] <= user_attempts[user_id]["used"]:
-        # Отправляем сообщение, что попытки закончились
-        await update.callback_query.message.reply_text(
-            "Вы не оплатили попытки или они все уже использованы.",
-            reply_markup=get_play_disabled_keyboard()
-        )
-        return
-
-    # Увеличиваем счетчик использованных попыток
-    user_attempts[user_id]["used"] += 1
-
-    # Отправляем сообщение, что начинается вращение
-    result_message = await update.callback_query.message.reply_text(
-        "🔄 Вращаю колесо... Пожалуйста, подождите..."
-    )
-
-    # Пройдемся по всем призам и покажем их с задержкой
-    for prize in PRIZES:
-        await result_message.edit_text(
-            f"Вращение... \nПриз: {prize}"
-        )
-        await asyncio.sleep(0.5)  # Задержка перед показом следующего приза
-
-    # После того как все призы были выведены, показываем финальный результат
-    final_prize = random.choice(PRIZES)  # Выбираем случайный приз
-    await result_message.edit_text(
-        f"🎉 Поздравляем! Ты выиграл: {final_prize} 🎉",
-        reply_markup=get_play_disabled_keyboard()  # Кнопка для продолжения будет заблокирована
-    )
-
-    # Покажем количество оставшихся попыток
-    remaining_attempts = user_attempts[user_id]["paid"] - user_attempts[user_id]["used"]
-    await update.callback_query.message.reply_text(
-        f"Осталось попыток: {remaining_attempts}",
-        reply_markup=get_play_keyboard() if remaining_attempts > 0 else get_play_disabled_keyboard()
-    )
-
 # Обработка квитанций (фото или документы)
 async def handle_receipt(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -177,6 +135,8 @@ async def confirm_payment(update: Update, context: CallbackContext):
     if user_id == ADMIN_ID:  # Проверка, что это администратор
         # Получаем user_id клиента из callback_data
         client_id = int(update.callback_query.data.split(":")[1])
+        logger.info(f"Подтверждение оплаты для клиента с ID: {client_id}")
+        
         # Сохраняем количество попыток для пользователя
         payment_choice = context.chat_data.get("payment_choice", None)
         attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
@@ -199,6 +159,8 @@ async def decline_payment(update: Update, context: CallbackContext):
     if user_id == ADMIN_ID:  # Проверка, что это администратор
         # Получаем user_id клиента из callback_data
         client_id = int(update.callback_query.data.split(":")[1])
+        logger.info(f"Отклонение оплаты для клиента с ID: {client_id}")
+        
         # Отправляем сообщение клиенту об отклонении
         await context.bot.send_message(
             chat_id=client_id,
