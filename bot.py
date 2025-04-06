@@ -148,14 +148,17 @@ async def confirm_payment(update: Update, context: CallbackContext):
     if user_id == ADMIN_ID:  # Проверка, что это администратор
         # Получаем user_id клиента из callback_data
         client_id = int(update.callback_query.data.split(":")[1])
+        
+        # Удаляем квитанцию
+        await update.callback_query.message.delete()
+
         # Отправляем сообщение клиенту о подтверждении
         await context.bot.send_message(
             chat_id=client_id,
             text="Оплата прошла успешно! Теперь вы можете крутить колесо фортуны.",
             reply_markup=get_play_keyboard()  # Добавляем кнопку для игры
         )
-        # Удаляем квитанцию и заменяем на сообщение о подтверждении
-        await update.callback_query.message.delete()
+        # Оповещаем администратора
         await update.callback_query.message.reply_text("Оплата подтверждена!")
         await update.callback_query.answer("Оплата подтверждена.")
     else:
@@ -166,11 +169,16 @@ async def decline_payment(update: Update, context: CallbackContext):
     if user_id == ADMIN_ID:  # Проверка, что это администратор
         # Получаем user_id клиента из callback_data
         client_id = int(update.callback_query.data.split(":")[1])
+
+        # Удаляем квитанцию
+        await update.callback_query.message.delete()
+
         # Отправляем сообщение клиенту об отклонении
         await context.bot.send_message(
             chat_id=client_id,
             text="Оплата отклонена. Попробуйте снова."
         )
+        # Оповещаем администратора
         await update.callback_query.answer("Оплата отклонена.")
     else:
         await update.callback_query.answer("Только администратор может отклонить оплату.")
