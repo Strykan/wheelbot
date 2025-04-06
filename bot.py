@@ -1,8 +1,8 @@
 import logging
 import os
 import random
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 from dotenv import load_dotenv
 
 # Загрузим переменные из .env
@@ -32,18 +32,28 @@ PRIZES = [
 
 # Команда start
 async def start(update: Update, context: CallbackContext):
+    keyboard = [
+        [InlineKeyboardButton("Начать игру", callback_data='play')],
+        [InlineKeyboardButton("Помощь", callback_data='help')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "Привет! Я — бот Колесо фортуны. Чтобы начать, выбери команду /play. "
-        "Ты можешь выиграть различные призы, но для этого нужно заплатить за попытку. "
-        "После того как оплатишь, отправь мне квитанцию и я подтвержу твою оплату."
+        "Привет! Я — бот Колесо фортуны. Чтобы начать, нажми на кнопку ниже.",
+        reply_markup=reply_markup
     )
 
-# Команда play
+# Команда play (нажатие кнопки)
 async def play(update: Update, context: CallbackContext):
-    await update.message.reply_text(
-        f"Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
-        f"Сумма: 100 рублей\n\n"
-        f"После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!"
+    keyboard = [
+        [InlineKeyboardButton("Подтвердить оплату", callback_data='confirm_payment')],
+        [InlineKeyboardButton("Отправить чек", callback_data='send_receipt')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.edit_message_text(
+        text=f"Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
+             f"Сумма: 100 рублей\n\n"
+             f"После перевода отправь мне квитанцию и нажми на кнопку для подтверждения.",
+        reply_markup=reply_markup
     )
 
 # Функция для вращения колеса фортуны
@@ -55,23 +65,24 @@ async def spin_wheel(update: Update, context: CallbackContext):
 
 # Обработчик квитанций (фото или документы)
 async def handle_receipt(update: Update, context: CallbackContext):
-    if update.message.photo or update.message.document:
+    if update.message.photo:
         caption = f"Чек от @{update.effective_user.username} (ID: {update.effective_user.id})"
-        if update.message.photo:
-            await context.bot.send_photo(
-                chat_id=ADMIN_ID,
-                photo=update.message.photo[-1].file_id,
-                caption=caption
-            )
-        elif update.message.document:
-            await context.bot.send_document(
-                chat_id=ADMIN_ID,
-                document=update.message.document.file_id,
-                caption=caption
-            )
+        await context.bot.send_photo(
+            chat_id=ADMIN_ID,
+            photo=update.message.photo[-1].file_id,
+            caption=caption
+        )
+        await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.")
+    elif update.message.document:
+        caption = f"Чек от @{update.effective_user.username} (ID: {update.effective_user.id})"
+        await context.bot.send_document(
+            chat_id=ADMIN_ID,
+            document=update.message.document.file_id,
+            caption=caption
+        )
         await update.message.reply_text("Чек отправлен на проверку. Ожидайте подтверждения.")
     else:
-        await update.message.reply_text("Пожалуйста, отправь чек о платеже.")
+        await update.message.reply_text("Пожалуйста, отправьте чек о платеже.")
 
 # Обработчик команды подтверждения оплаты (администратором)
 async def confirm_payment(update: Update, context: CallbackContext):
@@ -88,6 +99,20 @@ async def confirm_payment(update: Update, context: CallbackContext):
         else:
             await update.message.reply_text("Введите команду /confirm_payment с аргументами для подтверждения.")
 
+# Обработчик нажатий кнопок (callback queries)
+async def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'play':
+        await play(update, context)
+    elif query.data == 'help':
+        await query.edit_message_text("Помощь: Переведите 100 рублей, отправьте квитанцию и нажмите на кнопку для подтверждения оплаты.")
+    elif query.data == 'send_receipt':
+        await query.edit_message_text("Отправьте квитанцию для проверки.")
+    elif query.data == 'confirm_payment':
+        await query.edit_message_text("Пожалуйста, отправьте квитанцию для подтверждения оплаты.")
+
 # Ошибки
 async def error(update: Update, context: CallbackContext):
     logger.warning(f'Update {update} caused error {context.error}')
@@ -99,8 +124,7 @@ def main():
 
     # Обработчики
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("play", play))
-    application.add_handler(CommandHandler("confirm_payment", confirm_payment))  # Убираем pass_args
+    application.add_handler(CallbackQueryHandler(button))  # Обработка нажатий кнопок
     application.add_handler(MessageHandler(filters.PHOTO, handle_receipt))  # Обработка фото
     application.add_handler(MessageHandler(filters.Document(), handle_receipt))  # Обработка документов
     application.add_error_handler(error)
