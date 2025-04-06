@@ -75,10 +75,12 @@ async def payment_info(update: Update, context: CallbackContext):
     )
 
 # Функция для вращения колеса фортуны
-async def spin_wheel(update: Update, context: CallbackContext):
+async def spin_wheel(update: Update, context: CallbackContext, user_id: int):
     prize = random.choice(PRIZES)  # Выбираем случайный приз
-    await update.callback_query.message.reply_text(
-        f"🎉 Поздравляем! Ты выиграл: {prize} 🎉",
+    # Отправляем результат пользователю, который сделал оплату
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=f"🎉 Поздравляем! Ты выиграл: {prize} 🎉",
         reply_markup=get_back_keyboard()
     )
 
@@ -113,8 +115,8 @@ async def confirm_payment(update: Update, context: CallbackContext):
         # Получаем user_id клиента из callback_data
         client_id = int(update.callback_query.data.split(":")[1])
         await update.callback_query.message.reply_text("Оплата подтверждена! Пользователь получит попытки.", reply_markup=get_back_keyboard())
-        # Запускаем колесо фортуны после подтверждения
-        await spin_wheel(update, context)
+        # Запускаем колесо фортуны для клиента после подтверждения
+        await spin_wheel(update, context, client_id)
     else:
         await update.callback_query.message.reply_text("Только администратор может подтвердить оплату.", reply_markup=get_back_keyboard())
 
