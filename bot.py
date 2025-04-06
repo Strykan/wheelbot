@@ -31,7 +31,7 @@ PRIZES = [
     "Подарок"
 ]
 
-# Для отслеживания, кто сколько попыток использовал
+# Для отслеживания, кто уже использовал свою попытку
 user_attempts = {}
 
 # Генерация клавиатуры для кнопок
@@ -39,21 +39,10 @@ def get_start_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Начать игру", callback_data="play")]])
 
 def get_play_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Крутить колесо", callback_data="spin_wheel")]
-    ])
-
-def get_buy_attempts_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Купить 3 попытки", callback_data="buy_attempts_3")],
-        [InlineKeyboardButton("Купить 5 попыток", callback_data="buy_attempts_5")],
-        [InlineKeyboardButton("Купить 10 попыток", callback_data="buy_attempts_10")]
-    ])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Крутить колесо", callback_data="spin_wheel")]])
 
 def get_play_disabled_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Купить дополнительные попытки", callback_data="buy_attempts")]
-    ])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("Вы уже использовали попытку", callback_data="spin_wheel_disabled")]])
 
 # Команда start
 async def start(update: Update, context: CallbackContext):
@@ -73,21 +62,32 @@ async def play(update: Update, context: CallbackContext):
         "После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!"
     )
 
-# Функция для вращения колеса фортуны
+# Команда с реквизитами для оплаты
+async def payment_info(update: Update, context: CallbackContext):
+    # Удаляем предыдущее сообщение
+    await update.callback_query.message.delete()
+
+    await update.callback_query.message.reply_text(
+        "Переведи деньги на следующие реквизиты:\n"
+        "Сумма: 100 рублей\n\n"
+        "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!"
+    )
+
+# Функция для вращения колеса фортуны с поочередным выводом призов
 async def spin_wheel(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-
-    # Проверяем, если у пользователя есть попытки
-    if user_id not in user_attempts or user_attempts[user_id] <= 0:
-        # Если попытки закончились, предлагаем купить дополнительные
+    
+    # Проверяем, если пользователь уже использовал свою попытку
+    if user_id in user_attempts and user_attempts[user_id]:
+        # Отправляем сообщение, что попытка уже использована
         await update.callback_query.message.reply_text(
-            "У вас закончились попытки. Купите новые попытки, чтобы продолжить.",
-            reply_markup=get_buy_attempts_keyboard()
+            "Вы уже использовали свою попытку! Повторно крутить колесо нельзя.",
+            reply_markup=get_play_disabled_keyboard()
         )
         return
 
-    # Уменьшаем количество оставшихся попыток на 1
-    user_attempts[user_id] -= 1
+    # Устанавливаем, что пользователь использовал попытку
+    user_attempts[user_id] = True
 
     # Удаляем предыдущее сообщение
     await update.callback_query.message.delete()
@@ -176,7 +176,7 @@ async def decline_payment(update: Update, context: CallbackContext):
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()  # Подтверждаем нажатие кнопки
-
+    
     # Обработка нажатия на кнопки
     if query.data == "play":
         await play(update, context)
@@ -184,19 +184,12 @@ async def button(update: Update, context: CallbackContext):
         await payment_info(update, context)
     elif query.data == "spin_wheel":
         await spin_wheel(update, context)
-    elif query.data == "buy_attempts":
-        await query.message.reply_text(
-            "Выберите количество попыток для покупки.",
-            reply_markup=get_buy_attempts_keyboard()
-        )
-    elif query.data.startswith("buy_attempts_"):
-        num_attempts = int(query.data.split("_")[-1])  # Получаем количество попыток из callback_data
-        user_id = update.effective_user.id
-        user_attempts[user_id] = num_attempts  # Устанавливаем количество попыток для пользователя
-        await query.message.reply_text(
-            f"Вы купили {num_attempts} попыток! Теперь можно крутить колесо.",
-            reply_markup=get_play_keyboard()
-        )
+    elif query.data.startswith("confirm_payment"):
+        client_id = int(query.data.split(":")[1])
+        await confirm_payment(update, context)
+    elif query.data.startswith("decline_payment"):
+        client_id = int(query.data.split(":")[1])
+        await decline_payment(update, context)
 
 # Ошибки
 async def error(update: Update, context: CallbackContext):
