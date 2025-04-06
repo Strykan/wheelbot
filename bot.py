@@ -124,15 +124,27 @@ async def decline_payment(update: Update, context: CallbackContext):
 # Обработчик inline кнопок
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
-    await query.answer()
+    await query.answer()  # Подтверждаем нажатие кнопки
     
-    # Обработка нажатия на кнопки
     if query.data == "play":
-        await play(update, context)
+        await query.message.reply_text(  # Отправляем текст в тот же чат
+            "Для того, чтобы сыграть, переведи деньги на следующие реквизиты:\n"
+            "Сумма: 100 рублей\n\n"
+            "После перевода отправь мне квитанцию о платеже. Я проверю и дам тебе попытки!",
+            reply_markup=get_back_keyboard()
+        )
     elif query.data == "payment_info":
-        await payment_info(update, context)
+        await query.message.reply_text(  # Отправляем текст в тот же чат
+            "Переведи деньги на следующие реквизиты:\n"
+            "Сумма: 100 рублей\n\n"
+            "После перевода отправь мне квитанцию о платеже, и я дам тебе попытки!",
+            reply_markup=get_back_keyboard()
+        )
     elif query.data == "back":
-        await start(update, context)
+        await query.message.reply_text(  # Отправляем текст в тот же чат
+            "Привет! Я — бот Колесо фортуны. Чтобы начать, выбери одну из опций ниже.",
+            reply_markup=get_start_keyboard()
+        )
     elif query.data == "confirm_payment":
         await confirm_payment(update, context)
     elif query.data == "decline_payment":
