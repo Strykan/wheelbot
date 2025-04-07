@@ -341,10 +341,25 @@ async def main():
         application.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
         
         logger.info("Bot starting...")
-        await application.run_polling()
+        
+        # Убираем await, так как run_polling будет управлять loop сам
+        async with application:
+            await application.start()
+            await application.updater.start_polling()
+            await application.stop()
+            
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
         raise
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Решение для Python 3.12+ и Railway
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
