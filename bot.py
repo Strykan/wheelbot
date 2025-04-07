@@ -282,7 +282,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
         await message.edit_text(
             "🎡 <b>Колесо Фортуны</b>\n\n"
             f"{' '.join(wheel_segments)}\n"
-            f"{' ' * 8}👇\n\n"
+            f"{' ' * 8}⬆️\n\n"
             f"{'🌀' * (frame % 3 + 1)} Крутим колесо...",
             parse_mode=ParseMode.HTML
         )
@@ -294,7 +294,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
         await message.edit_text(
             "🎡 <b>Колесо Фортуны</b>\n\n"
             f"{' '.join(wheel_segments)}\n"
-            f"{' ' * 8}👇\n\n"
+            f"{' ' * 8}⬆️\n\n"
             "🛑 Останавливается...",
             parse_mode=ParseMode.HTML
         )
