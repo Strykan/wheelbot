@@ -38,7 +38,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS user_attempts
                   (user_id INTEGER PRIMARY KEY, paid INTEGER, used INTEGER)''')
 cursor.execute('''CREATE TABLE IF NOT EXISTS payment_methods
                   (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   name TEXT NOT NULL,
+                   name TEXT NOT NULL UNIQUE,
                    details TEXT NOT NULL,
                    is_active BOOLEAN DEFAULT 1)''')
 conn.commit()
@@ -110,14 +110,22 @@ def save_user_attempts(user_id, paid_attempts, used_attempts):
 
 def add_payment_method(name, details):
     try:
+        # Проверка на существующий способ оплаты
+        cursor.execute('SELECT id FROM payment_methods WHERE name = ?', (name,))
+        if cursor.fetchone():
+            logger.warning(f"Способ оплаты '{name}' уже существует")
+            return False
+            
         cursor.execute(
             'INSERT INTO payment_methods (name, details) VALUES (?, ?)',
             (name, details)
         )
         conn.commit()
+        logger.info(f"Добавлен новый способ оплаты: {name}")
         return True
     except sqlite3.Error as e:
-        logger.error(f"Database error: {e}")
+        logger.error(f"Ошибка базы данных: {e}")
+        conn.rollback()
         return False
 
 def update_payment_method(method_id, name, details):
@@ -130,6 +138,7 @@ def update_payment_method(method_id, name, details):
         return True
     except sqlite3.Error as e:
         logger.error(f"Database error: {e}")
+        conn.rollback()
         return False
 
 def toggle_payment_method(method_id):
@@ -142,6 +151,7 @@ def toggle_payment_method(method_id):
         return True
     except sqlite3.Error as e:
         logger.error(f"Database error: {e}")
+        conn.rollback()
         return False
 
 def delete_payment_method(method_id):
@@ -154,6 +164,7 @@ def delete_payment_method(method_id):
         return True
     except sqlite3.Error as e:
         logger.error(f"Database error: {e}")
+        conn.rollback()
         return False
 
 def get_payment_method(method_id):
@@ -248,19 +259,33 @@ async def edit_payment_method_handler(update: Update, context: CallbackContext):
     
     method_id = int(query.data.split('_')[-1])
     context.user_data['editing_payment_method'] = method_id
-    await query.message.edit_text(
-        "Введите новое название и реквизиты в формате:\n\n"
-        "<code>Название\nРеквизиты</code>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
-        ])
-    )
+    method = get_payment_method(method_id)
+    
+    if method:
+        await query.message.edit_text(
+            f"Текущие данные:\n\nНазвание: {method[0]}\nРеквизиты: {method[1]}\n\n"
+            "Введите новые данные в формате:\n\n"
+            "<code>Новое название\nНовые реквизиты</code>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
+            ])
+        )
+    else:
+        await query.answer("Способ оплаты не найден", show_alert=True)
 
 async def handle_payment_method_text(update: Update, context: CallbackContext):
     if 'adding_payment_method' in context.user_data:
-        # Добавление нового способа оплаты
-        name = update.message.text
+        # Этап 1: Получение названия способа оплаты
+        name = update.message.text.strip()
+        if not name:
+            await update.message.reply_text("Название не может быть пустым. Попробуйте снова.")
+            return
+            
+        if len(name) > 50:
+            await update.message.reply_text("Название слишком длинное (макс. 50 символов).")
+            return
+            
         context.user_data['new_payment_name'] = name
         context.user_data['adding_payment_method'] = False
         context.user_data['adding_payment_details'] = True
@@ -271,52 +296,76 @@ async def handle_payment_method_text(update: Update, context: CallbackContext):
                 [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
             ])
         )
+    
     elif 'adding_payment_details' in context.user_data:
-        # Сохранение нового способа оплаты
-        details = update.message.text
-        name = context.user_data['new_payment_name']
-        
+        # Этап 2: Получение реквизитов
+        details = update.message.text.strip()
+        if not details:
+            await update.message.reply_text("Реквизиты не могут быть пустыми. Попробуйте снова.")
+            return
+            
+        name = context.user_data.get('new_payment_name')
+        if not name:
+            await update.message.reply_text("Ошибка: не найдено название способа оплаты")
+            return
+            
         if add_payment_method(name, details):
             await update.message.reply_text(
                 f"✅ Способ оплаты <b>{name}</b> успешно добавлен!",
                 parse_mode=ParseMode.HTML
             )
+            # Очищаем временные данные
+            context.user_data.pop('new_payment_name', None)
+            context.user_data.pop('adding_payment_details', None)
+            
+            # Возвращаем администратора к списку способов оплаты
+            await manage_payment_methods(update, context)
         else:
             await update.message.reply_text(
-                "❌ Произошла ошибка при добавлении способа оплаты"
+                "❌ Не удалось добавить способ оплаты. Возможно, такое название уже существует."
             )
-        
-        # Очищаем временные данные
-        context.user_data.pop('new_payment_name', None)
-        context.user_data.pop('adding_payment_details', None)
-        
-        # Возвращаемся к списку способов оплаты
-        await manage_payment_methods(update, context)
+    
     elif 'editing_payment_method' in context.user_data:
-        # Редактирование существующего способа оплаты
+        # Редактирование существующего способа
         method_id = context.user_data['editing_payment_method']
         try:
-            name, details = update.message.text.split('\n', 1)
+            text = update.message.text.strip()
+            if not text:
+                await update.message.reply_text("Данные не могут быть пустыми.")
+                return
+                
+            parts = text.split('\n', 1)
+            if len(parts) != 2:
+                await update.message.reply_text("Неверный формат. Введите название и реквизиты на отдельных строках.")
+                return
+                
+            name, details = parts
+            name = name.strip()
+            details = details.strip()
+            
+            if not name or not details:
+                await update.message.reply_text("Название и реквизиты не могут быть пустыми.")
+                return
+                
             if update_payment_method(method_id, name, details):
                 await update.message.reply_text(
-                    f"✅ Способ оплаты успешно обновлен!",
+                    "✅ Способ оплаты успешно обновлен!",
                     parse_mode=ParseMode.HTML
                 )
             else:
                 await update.message.reply_text(
-                    "❌ Произошла ошибка при обновлении способа оплаты"
+                    "❌ Не удалось обновить способ оплаты."
                 )
-        except ValueError:
+        except Exception as e:
+            logger.error(f"Ошибка при редактировании способа оплаты: {e}")
             await update.message.reply_text(
-                "Неправильный формат. Введите название и реквизиты на отдельных строках."
+                "❌ Произошла ошибка при обновлении способа оплаты."
             )
-            return
-        
-        # Очищаем временные данные
-        context.user_data.pop('editing_payment_method', None)
-        
-        # Возвращаемся к списку способов оплаты
-        await manage_payment_methods(update, context)
+        finally:
+            # Очищаем временные данные
+            context.user_data.pop('editing_payment_method', None)
+            # Возвращаем к списку способов оплаты
+            await manage_payment_methods(update, context)
 
 async def toggle_payment_method_handler(update: Update, context: CallbackContext):
     query = update.callback_query
