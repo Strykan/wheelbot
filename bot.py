@@ -102,6 +102,7 @@ async def handle_payment_choice(update: Update, context: CallbackContext):
             f"Вы выбрали {choice} попыток за {price} рублей.\n"
             "После перевода отправьте мне квитанцию о платеже, и я дам вам попытки!",
         )
+        # Сохраняем выбранное количество попыток в context.user_data
         context.user_data["payment_choice"] = choice
     else:
         await update.callback_query.message.reply_text("Неверный выбор.")
@@ -149,12 +150,12 @@ async def confirm_payment(update: Update, context: CallbackContext):
         client_id = int(update.callback_query.data.split(":")[1])
         logger.info(f"Подтверждение оплаты для клиента с ID: {client_id}")
 
+        # Получаем выбранное количество попыток из context.user_data
         payment_choice = context.user_data.get("payment_choice", None)
-        logger.info(f"Выбранное количество попыток: {payment_choice}")
-        
+
         if payment_choice:
             attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
-            logger.info(f"Попытки, которые будут добавлены: {attempts}")
+            logger.info(f"Выбранное количество попыток: {attempts}")
             
             if attempts > 0:
                 save_user_attempts(client_id, attempts, 0)  # Сохраняем данные о попытках в базе данных
@@ -215,7 +216,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(play, pattern="play"))
     application.add_handler(CallbackQueryHandler(handle_payment_choice, pattern="pay_"))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))  # Исправленный фильтр
+    application.add_handler(MessageHandler(filters.Photo | filters.Document.ALL, handle_receipt))
     application.add_handler(CallbackQueryHandler(confirm_payment, pattern="confirm_payment"))
     application.add_handler(CallbackQueryHandler(decline_payment, pattern="decline_payment"))
     application.add_handler(CallbackQueryHandler(spin_wheel, pattern="spin_wheel"))
