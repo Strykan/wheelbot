@@ -233,7 +233,7 @@ async def add_payment_method_handler(update: Update, context: CallbackContext):
     context.user_data['adding_payment_method'] = True
     await query.message.edit_text(
         "Введите название нового способа оплаты:",
-        reply_markup=InlineKeyboardMarkup([
+        reply_markup=InlineKeyboardMarkup(
             [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
         )
     )
