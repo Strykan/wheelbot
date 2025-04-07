@@ -331,6 +331,7 @@ async def admin_stats(query):
     )
 
 async def main():
+    application = None
     try:
         await init_db()
         application = Application.builder().token(BOT_TOKEN).build()
@@ -341,25 +342,33 @@ async def main():
         application.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
         
         logger.info("Bot starting...")
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
         
-        # Убираем await, так как run_polling будет управлять loop сам
-        async with application:
-            await application.start()
-            await application.updater.start_polling()
-            await application.stop()
+        # Бесконечный цикл ожидания
+        while True:
+            await asyncio.sleep(3600)  # Проверка каждые 60 минут
             
+    except asyncio.CancelledError:
+        logger.info("Bot received shutdown signal")
     except Exception as e:
         logger.error(f"Bot crashed: {e}")
-        raise
+    finally:
+        if application:
+            logger.info("Stopping bot gracefully...")
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
 
 if __name__ == '__main__':
-    # Решение для Python 3.12+ и Railway
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
     try:
         loop.run_until_complete(main())
     except KeyboardInterrupt:
-        pass
+        logger.info("Bot stopped by keyboard interrupt")
     finally:
         loop.close()
+        logger.info("Event loop closed")

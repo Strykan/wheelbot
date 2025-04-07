@@ -1,0 +1,11 @@
+{
+  "builds": [
+    {
+      "src": "wheel_of_fortune_bot.py",
+      "use": "@railway/python"
+    }
+  ],
+  "deploy": {
+    "startCommand": "python wheel_of_fortune_bot.py"
+  }
+}
