@@ -33,45 +33,49 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Инициализация базы данных
-conn = sqlite3.connect('wheel_of_fortune.db', check_same_thread=False)
-cursor = conn.cursor()
+def init_db():
+    conn = sqlite3.connect('wheel_of_fortune.db', check_same_thread=False)
+    cursor = conn.cursor()
 
-# Создаем таблицы
-cursor.execute('''CREATE TABLE IF NOT EXISTS user_attempts
-                  (user_id INTEGER PRIMARY KEY, 
-                   paid INTEGER DEFAULT 0, 
-                   used INTEGER DEFAULT 0,
-                   last_bonus_date TEXT,
-                   referral_code TEXT UNIQUE,
-                   referred_by INTEGER DEFAULT NULL,
-                   referrals_count INTEGER DEFAULT 0)''')
+    # Создаем таблицы
+    cursor.execute('''CREATE TABLE IF NOT EXISTS user_attempts
+                      (user_id INTEGER PRIMARY KEY, 
+                       paid INTEGER DEFAULT 0, 
+                       used INTEGER DEFAULT 0,
+                       last_bonus_date TEXT,
+                       referral_code TEXT UNIQUE,
+                       referred_by INTEGER DEFAULT NULL,
+                       referrals_count INTEGER DEFAULT 0)''')
 
-cursor.execute('''CREATE TABLE IF NOT EXISTS payment_methods
-                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   name TEXT NOT NULL UNIQUE,
-                   details TEXT NOT NULL,
-                   is_active BOOLEAN DEFAULT 1)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS payment_methods
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       name TEXT NOT NULL UNIQUE,
+                       details TEXT NOT NULL,
+                       is_active BOOLEAN DEFAULT 1)''')
 
-cursor.execute('''CREATE TABLE IF NOT EXISTS transactions
-                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   user_id INTEGER NOT NULL,
-                   amount INTEGER NOT NULL,
-                   attempts INTEGER NOT NULL,
-                   status TEXT NOT NULL,
-                   receipt_id TEXT,
-                   admin_id INTEGER,
-                   created_at TEXT NOT NULL,
-                   updated_at TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS transactions
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       user_id INTEGER NOT NULL,
+                       amount INTEGER NOT NULL,
+                       attempts INTEGER NOT NULL,
+                       status TEXT NOT NULL,
+                       receipt_id TEXT,
+                       admin_id INTEGER,
+                       created_at TEXT NOT NULL,
+                       updated_at TEXT)''')
 
-cursor.execute('''CREATE TABLE IF NOT EXISTS prizes
-                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   user_id INTEGER NOT NULL,
-                   prize_type TEXT NOT NULL,
-                   value TEXT NOT NULL,
-                   is_claimed BOOLEAN DEFAULT 0,
-                   created_at TEXT NOT NULL)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS prizes
+                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       user_id INTEGER NOT NULL,
+                       prize_type TEXT NOT NULL,
+                       value TEXT NOT NULL,
+                       is_claimed BOOLEAN DEFAULT 0,
+                       created_at TEXT NOT NULL)''')
 
-conn.commit()
+    conn.commit()
+    return conn, cursor
+
+conn, cursor = init_db()
 
 # Валидация ввода
 def validate_input(text, max_length=1000):
@@ -116,8 +120,7 @@ def get_payment_keyboard():
     ])
 
 def get_payment_methods_keyboard():
-    cursor.execute('SELECT id, name FROM payment_methods WHERE is_active = 1')
-    methods = cursor.fetchall()
+    methods = get_payment_methods()
     keyboard = []
     for method in methods:
         keyboard.append([InlineKeyboardButton(method[1], callback_data=f"method_{method[0]}")])
@@ -181,7 +184,6 @@ def update_user_attempts(user_id, paid=0, used=0, last_bonus_date=None):
             update_query += '''last_bonus_date = ?, '''
             params.append(last_bonus_date)
         
-        # Убираем последнюю запятую и пробел
         update_query = update_query[:-2]
         update_query += ''' WHERE user_id = ?'''
         params.append(user_id)
@@ -194,13 +196,22 @@ def update_user_attempts(user_id, paid=0, used=0, last_bonus_date=None):
         conn.rollback()
         return False
 
+def get_payment_methods():
+    try:
+        cursor.execute('SELECT id, name, details FROM payment_methods WHERE is_active = 1')
+        return cursor.fetchall()
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка базы данных: {e}")
+        return []
+
 def add_payment_method(name, details):
-    if not validate_input(name) or not validate_input(details):
+    if not validate_input(name, 50) or not validate_input(details, 1000):
         return False
         
     try:
         cursor.execute('SELECT id FROM payment_methods WHERE name = ?', (name,))
         if cursor.fetchone():
+            logger.warning(f"Способ оплаты '{name}' уже существует")
             return False
             
         cursor.execute(
@@ -208,6 +219,7 @@ def add_payment_method(name, details):
             (name, details)
         )
         conn.commit()
+        logger.info(f"Добавлен способ оплаты: {name}")
         return True
     except sqlite3.Error as e:
         logger.error(f"Ошибка базы данных: {e}")
@@ -215,7 +227,7 @@ def add_payment_method(name, details):
         return False
 
 def update_payment_method(method_id, name, details):
-    if not validate_input(name) or not validate_input(details):
+    if not validate_input(name, 50) or not validate_input(details, 1000):
         return False
         
     try:
@@ -378,7 +390,6 @@ def get_referral_info(user_id):
 
 def process_referral(user_id, referral_code):
     try:
-        # Получаем ID пригласившего
         cursor.execute(
             '''SELECT user_id FROM user_attempts WHERE referral_code = ?''',
             (referral_code,)
@@ -389,13 +400,11 @@ def process_referral(user_id, referral_code):
             
         referrer_id = referrer[0]
         
-        # Обновляем данные у реферала
         cursor.execute(
             '''UPDATE user_attempts SET referred_by = ? WHERE user_id = ?''',
             (referrer_id, user_id)
         )
         
-        # Обновляем счетчик у пригласившего
         cursor.execute(
             '''UPDATE user_attempts 
                SET referrals_count = referrals_count + 1,
@@ -404,7 +413,6 @@ def process_referral(user_id, referral_code):
             (referrer_id,)
         )
         
-        # Даем бонус новому пользователю
         cursor.execute(
             '''UPDATE user_attempts SET paid = paid + 1 WHERE user_id = ?''',
             (user_id,)
@@ -422,16 +430,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     args = context.args
     
-    # Обработка реферальной ссылки
     if args and args[0].startswith('ref'):
-        referral_code = args[0][3:]  # Убираем 'ref' из начала
+        referral_code = args[0][3:]
         if process_referral(user.id, referral_code):
             await update.message.reply_text(
                 "🎉 Вы получили +1 попытку за регистрацию по реферальной ссылке!",
                 parse_mode=ParseMode.HTML
             )
     
-    # Генерация реферального кода, если его нет
     ref_info = get_referral_info(user.id)
     if ref_info and not ref_info['code']:
         generate_referral_code(user.id)
@@ -489,7 +495,6 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     try:
-        # Статистика пользователей
         cursor.execute('SELECT COUNT(*) FROM user_attempts')
         total_users = cursor.fetchone()[0]
         
@@ -498,7 +503,6 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_paid = attempts[0] or 0
         total_used = attempts[1] or 0
         
-        # Статистика транзакций
         cursor.execute('''SELECT status, COUNT(*), SUM(amount) 
                           FROM transactions GROUP BY status''')
         transactions = cursor.fetchall()
@@ -570,7 +574,6 @@ async def edit_payment_method_handler(update: Update, context: ContextTypes.DEFA
 
 async def handle_payment_method_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'adding_payment_method' in context.user_data:
-        # Этап 1: Получение названия способа оплаты
         name = update.message.text.strip()
         if not validate_input(name, 50):
             await update.message.reply_text(
@@ -593,7 +596,6 @@ async def handle_payment_method_text(update: Update, context: ContextTypes.DEFAU
         )
     
     elif 'adding_payment_details' in context.user_data:
-        # Этап 2: Получение реквизитов
         details = update.message.text.strip()
         if not validate_input(details, 1000):
             await update.message.reply_text(
@@ -619,11 +621,8 @@ async def handle_payment_method_text(update: Update, context: ContextTypes.DEFAU
                 f"✅ Способ оплаты <b>{name}</b> успешно добавлен!",
                 parse_mode=ParseMode.HTML
             )
-            # Очищаем временные данные
             context.user_data.pop('new_payment_name', None)
             context.user_data.pop('adding_payment_details', None)
-            
-            # Возвращаем администратора к списку способов оплаты
             await manage_payment_methods(update, context)
         else:
             await update.message.reply_text(
@@ -634,7 +633,6 @@ async def handle_payment_method_text(update: Update, context: ContextTypes.DEFAU
             )
     
     elif 'editing_payment_method' in context.user_data:
-        # Редактирование существующего способа
         method_id = context.user_data['editing_payment_method']
         try:
             text = update.message.text.strip()
@@ -691,9 +689,7 @@ async def handle_payment_method_text(update: Update, context: ContextTypes.DEFAU
                 ])
             )
         finally:
-            # Очищаем временные данные
             context.user_data.pop('editing_payment_method', None)
-            # Возвращаем к списку способов оплаты
             await manage_payment_methods(update, context)
 
 async def toggle_payment_method_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -771,7 +767,6 @@ async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("🎁 Вы уже получали бонус сегодня. Приходите завтра!", show_alert=True)
         return
     
-    # Обновляем дату последнего бонуса и добавляем попытки
     update_user_attempts(
         user_id=user_id,
         paid=DAILY_BONUS,
@@ -851,7 +846,6 @@ async def show_payment_method(update: Update, context: ContextTypes.DEFAULT_TYPE
     choice = context.chat_data.get("payment_choice")
     amount = context.chat_data.get("payment_amount", 0)
     
-    # Создаем транзакцию
     transaction_id = create_transaction(
         user_id=query.from_user.id,
         amount=amount,
@@ -898,20 +892,16 @@ async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("❌ У вас нет доступных попыток!", show_alert=True)
         return
     
-    # Увеличиваем счетчик использованных попыток
     if not update_user_attempts(user_id=user_id, used=1):
         await query.answer("❌ Ошибка при использовании попытки", show_alert=True)
         return
     
-    # Символы для колеса и их веса
     wheel_segments = ["🍒", "🍋", "🍊", "🍇", "🍉", "💰", "🎁", "⭐", "🍀"]
     segment_weights = [15, 15, 15, 15, 10, 5, 5, 10, 10]
     
-    # Выбираем случайный сегмент для остановки
     selected_index = random.choices(range(len(wheel_segments)), weights=segment_weights, k=1)[0]
     selected_segment = wheel_segments[selected_index]
     
-    # Привязка сегментов к призам
     prize_mapping = {
         "🍒": ("10 рублей", "money", "10"),
         "🍋": ("20 рублей", "money", "20"),
@@ -925,10 +915,8 @@ async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     prize_name, prize_type, prize_value = prize_mapping.get(selected_segment, ("Ничего", "other", "none"))
     
-    # Добавляем приз в базу данных
     add_prize(user_id, prize_type, prize_value)
     
-    # Создаем сообщение с анимацией
     message = await query.message.reply_text(
         "🎡 <b>Колесо Фортуны</b>\n\n"
         f"{' ' * 8}👆\n"
@@ -937,23 +925,18 @@ async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML
     )
     
-    # Параметры анимации
     spin_duration = 3
     frames = 15
     slowdown_start = 10
     
-    # Анимация вращения
     for frame in range(frames):
-        # Вращаем колесо
         wheel_segments.insert(0, wheel_segments.pop())
         
-        # Рассчитываем задержку
         if frame < slowdown_start:
             delay = 0.15
         else:
             delay = 0.15 + (frame - slowdown_start) * 0.1
         
-        # Обновляем сообщение
         await message.edit_text(
             "🎡 <b>Колесо Фортуны</b>\n\n"
             f"{' ' * 8}👆\n"
@@ -963,7 +946,6 @@ async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await asyncio.sleep(delay)
     
-    # Останавливаем колесо
     while wheel_segments[-1] != selected_segment:
         wheel_segments.insert(0, wheel_segments.pop())
         await message.edit_text(
@@ -975,10 +957,8 @@ async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await asyncio.sleep(0.3)
     
-    # Получаем обновленное количество попыток
     attempts = get_user_attempts(user_id)
     
-    # Финальное сообщение
     await message.edit_text(
         f"🎉 <b>Поздравляем!</b>\n\n"
         f"🏆 Вы выиграли: <b>{prize_name}</b>\n\n"
@@ -988,7 +968,6 @@ async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_play_keyboard(user_id)
     )
     
-    # Удаляем исходное сообщение с кнопкой
     try:
         await query.message.delete()
     except:
@@ -1016,7 +995,6 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Обновляем транзакцию с ID чека
     receipt_id = update.message.photo[-1].file_id if update.message.photo else update.message.document.file_id
     update_transaction(
         transaction_id=transaction_id,
@@ -1024,7 +1002,6 @@ async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         receipt_id=receipt_id
     )
     
-    # Получаем данные о транзакции
     cursor.execute(
         '''SELECT amount, attempts FROM transactions WHERE id = ?''',
         (transaction_id,)
@@ -1095,7 +1072,6 @@ async def confirm_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = int(user_id)
     
     try:
-        # Получаем данные о транзакции
         cursor.execute(
             '''SELECT amount, attempts FROM transactions WHERE id = ?''',
             (transaction_id,)
@@ -1108,20 +1084,16 @@ async def confirm_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         amount, attempts = result
         
-        # Обновляем статус транзакции
         update_transaction(
             transaction_id=transaction_id,
             status='completed',
             admin_id=query.from_user.id
         )
         
-        # Добавляем попытки пользователю
         update_user_attempts(user_id=user_id, paid=attempts)
         
-        # Получаем обновленное количество попыток
         user_attempts = get_user_attempts(user_id)
         
-        # Уведомляем пользователя
         await context.bot.send_message(
             chat_id=user_id,
             text=f"✅ <b>Ваш платеж подтвержден!</b>\n\n"
@@ -1132,10 +1104,8 @@ async def confirm_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_play_keyboard(user_id)
         )
         
-        # Удаляем оригинальное сообщение с чеком
         await query.message.delete()
         
-        # Отправляем подтверждение администратору
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=f"✅ Платеж подтвержден\n\n"
@@ -1164,14 +1134,12 @@ async def decline_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = int(user_id)
     
     try:
-        # Обновляем статус транзакции
         update_transaction(
             transaction_id=transaction_id,
             status='declined',
             admin_id=query.from_user.id
         )
         
-        # Уведомляем пользователя
         await context.bot.send_message(
             chat_id=user_id,
             text="❌ <b>Ваш платеж был отклонен администратором</b>\n\n"
@@ -1184,10 +1152,8 @@ async def decline_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_start_keyboard()
         )
         
-        # Удаляем оригинальное сообщение с чеком
         await query.message.delete()
         
-        # Отправляем уведомление администратору
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=f"❌ Платеж отклонен\n\n"
@@ -1205,7 +1171,6 @@ async def back_to_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    # Очищаем данные о текущей транзакции
     context.chat_data.pop("current_transaction", None)
     context.chat_data.pop("payment_choice", None)
     context.chat_data.pop("payment_amount", None)
