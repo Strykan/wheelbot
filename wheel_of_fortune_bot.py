@@ -2,7 +2,7 @@ import logging
 import os
 import random
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -20,7 +20,7 @@ from database import Database
 # Инициализация
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 DAILY_BONUS = 1
 MAX_ATTEMPTS_PER_SPIN = 1
 MAX_PAYMENT_AMOUNT = 10000
@@ -67,6 +67,13 @@ def get_payment_keyboard():
         [InlineKeyboardButton("🔙 Назад", callback_data="back_to_start")]
     ])
 
+def get_admin_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("💳 Управление платежами", callback_data="admin_payments")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_start")]
+    ])
+
 # Обработчики команд
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -92,10 +99,108 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_start_keyboard(user.id)
     )
 
-async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    data = query.data
     
+    if data == "play":
+        await show_play_menu(query)
+    elif data == "check_attempts":
+        await check_attempts(query)
+    elif data == "daily_bonus":
+        await daily_bonus(query)
+    elif data == "referral_info":
+        await referral_info(query)
+    elif data == "buy_attempts":
+        await buy_attempts(query)
+    elif data == "spin_wheel":
+        await spin_wheel(query)
+    elif data == "back_to_start":
+        await back_to_start(query)
+    elif data.startswith("pay_"):
+        attempts = int(data.split("_")[1])
+        await process_payment(query, attempts)
+    elif data == "admin_panel" and query.from_user.id == ADMIN_ID:
+        await admin_panel(query)
+    elif data == "admin_stats" and query.from_user.id == ADMIN_ID:
+        await admin_stats(query)
+
+async def show_play_menu(query):
+    user_id = query.from_user.id
+    attempts = await db.get_user_attempts(user_id)
+    await query.edit_message_text(
+        f"🎰 <b>Игровое меню</b>\n\n"
+        f"🔄 Доступно попыток: <b>{attempts['remaining']}</b>\n\n"
+        "Выберите действие:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_play_keyboard(user_id)
+    )
+
+async def check_attempts(query):
+    user_id = query.from_user.id
+    attempts = await db.get_user_attempts(user_id)
+    await query.edit_message_text(
+        f"ℹ️ <b>Ваши попытки</b>\n\n"
+        f"💰 Куплено: <b>{attempts['paid']}</b>\n"
+        f"🔄 Использовано: <b>{attempts['used']}</b>\n"
+        f"🎯 Осталось: <b>{attempts['remaining']}</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_start_keyboard(user_id)
+    )
+
+async def daily_bonus(query):
+    user_id = query.from_user.id
+    attempts = await db.get_user_attempts(user_id)
+    today = datetime.now().date().isoformat()
+    
+    if attempts['last_bonus_date'] == today:
+        await query.answer("❌ Вы уже получали бонус сегодня!", show_alert=True)
+        return
+    
+    await db.update_user_attempts(
+        user_id=user_id,
+        paid=DAILY_BONUS,
+        last_bonus_date=today
+    )
+    
+    await query.edit_message_text(
+        f"🎁 <b>Ежедневный бонус</b>\n\n"
+        f"✅ Вы получили <b>{DAILY_BONUS}</b> бесплатную попытку!\n\n"
+        f"🔄 Теперь у вас <b>{attempts['remaining'] + DAILY_BONUS}</b> попыток.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_start_keyboard(user_id)
+    )
+
+async def referral_info(query):
+    user_id = query.from_user.id
+    ref_info = await db.get_referral_info(user_id)
+    
+    if not ref_info or not ref_info['code']:
+        ref_code = await db.generate_referral_code(user_id)
+    else:
+        ref_code = ref_info['code']
+    
+    ref_link = f"https://t.me/{context.bot.username}?start=ref{ref_code}"
+    
+    await query.edit_message_text(
+        f"👥 <b>Реферальная программа</b>\n\n"
+        f"🔗 Ваша реферальная ссылка:\n<code>{ref_link}</code>\n\n"
+        f"👤 Приглашено друзей: <b>{ref_info['count'] if ref_info else 0}</b>\n\n"
+        "💎 За каждого друга вы получаете <b>+1 попытку</b>!",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_start_keyboard(user_id)
+    )
+
+async def buy_attempts(query):
+    await query.edit_message_text(
+        "💰 <b>Покупка попыток</b>\n\n"
+        "Выберите количество попыток:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_payment_keyboard()
+    )
+
+async def spin_wheel(query):
     user_id = query.from_user.id
     attempts = await db.get_user_attempts(user_id)
     
@@ -157,7 +262,73 @@ async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_play_keyboard(user_id)
     )
 
-# ... (добавьте остальные обработчики по аналогии)
+async def back_to_start(query):
+    await query.edit_message_text(
+        "🎡 Добро пожаловать в <b>Колесо Фортуны</b>!\n\n"
+        "💎 Крутите колесо и выигрывайте призы!\n"
+        "💰 Попытки можно купить, получить за рефералов или ежедневный бонус.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_start_keyboard(query.from_user.id)
+    )
+
+async def process_payment(query, attempts):
+    user_id = query.from_user.id
+    prices = {1: 50, 3: 130, 5: 200, 10: 350}
+    amount = prices.get(attempts, 50 * attempts)
+    
+    try:
+        transaction_id = await db.create_transaction(user_id, amount, attempts)
+        await query.edit_message_text(
+            f"💳 <b>Оплата {attempts} попыток</b>\n\n"
+            f"💰 Сумма: <b>{amount} руб</b>\n\n"
+            "Отправьте скриншот чека об оплате для подтверждения.",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Payment error: {e}")
+        await query.answer("❌ Ошибка при создании платежа", show_alert=True)
+
+async def handle_receipt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.photo:
+        photo = update.message.photo[-1]
+        await update.message.reply_text(
+            "✅ Чек получен! Администратор проверит оплату и начислит попытки в течение 24 часов.",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Уведомление администратора
+        if ADMIN_ID:
+            await context.bot.send_photo(
+                chat_id=ADMIN_ID,
+                photo=photo.file_id,
+                caption=f"Новый чек от пользователя {update.message.from_user.id}"
+            )
+
+async def admin_panel(query):
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("❌ Доступ запрещен", show_alert=True)
+        return
+    
+    await query.edit_message_text(
+        "🛠 <b>Панель администратора</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_admin_keyboard()
+    )
+
+async def admin_stats(query):
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("❌ Доступ запрещен", show_alert=True)
+        return
+    
+    # Здесь можно добавить реальную статистику из БД
+    await query.edit_message_text(
+        "📊 <b>Статистика</b>\n\n"
+        "👤 Всего пользователей: <b>100</b>\n"
+        "💰 Общий доход: <b>5000 руб</b>\n"
+        "🎰 Всего игр: <b>250</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_admin_keyboard()
+    )
 
 async def main():
     try:
@@ -167,7 +338,7 @@ async def main():
         # Регистрация обработчиков
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CallbackQueryHandler(button))
-        application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
+        application.add_handler(MessageHandler(filters.PHOTO, handle_receipt))
         
         logger.info("Bot starting...")
         await application.run_polling()
