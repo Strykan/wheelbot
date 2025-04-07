@@ -21,6 +21,17 @@ load_dotenv()
 # Конфигурация
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+PRIZES = [
+    "100 рублей",
+    "Бесплатная попытка",
+    "5 бесплатных попыток",
+    "10 рублей",
+    "Конфетка",
+    "Ничего",
+    "5 рублей",
+    "Скидка 10% на след. игру",
+    "Подарок"
+]
 
 # Настройка логирования
 logging.basicConfig(
@@ -32,15 +43,8 @@ logger = logging.getLogger(__name__)
 # Инициализация базы данных
 conn = sqlite3.connect('wheel_of_fortune.db', check_same_thread=False)
 cursor = conn.cursor()
-
-# Создаем таблицы
 cursor.execute('''CREATE TABLE IF NOT EXISTS user_attempts
                   (user_id INTEGER PRIMARY KEY, paid INTEGER, used INTEGER)''')
-cursor.execute('''CREATE TABLE IF NOT EXISTS payment_methods
-                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                   name TEXT NOT NULL,
-                   details TEXT NOT NULL,
-                   is_active BOOLEAN DEFAULT 1)''')
 conn.commit()
 
 # Клавиатуры
@@ -73,30 +77,6 @@ def get_payment_keyboard():
         [InlineKeyboardButton("🔙 Назад", callback_data="back_to_start")]
     ])
 
-def get_payment_methods_keyboard():
-    cursor.execute('SELECT id, name FROM payment_methods WHERE is_active = 1')
-    methods = cursor.fetchall()
-    keyboard = []
-    for method in methods:
-        keyboard.append([InlineKeyboardButton(method[1], callback_data=f"method_{method[0]}")])
-    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_start")])
-    return InlineKeyboardMarkup(keyboard)
-
-def get_admin_payment_methods_keyboard():
-    cursor.execute('SELECT id, name, is_active FROM payment_methods')
-    methods = cursor.fetchall()
-    keyboard = []
-    for method in methods:
-        status = "✅" if method[2] else "❌"
-        keyboard.append([
-            InlineKeyboardButton(f"{status} {method[1]}", callback_data=f"admin_method_{method[0]}"),
-            InlineKeyboardButton("✏️", callback_data=f"edit_method_{method[0]}"),
-            InlineKeyboardButton("🗑", callback_data=f"delete_method_{method[0]}")
-        ])
-    keyboard.append([InlineKeyboardButton("➕ Добавить способ", callback_data="add_payment_method")])
-    keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="admin_back")])
-    return InlineKeyboardMarkup(keyboard)
-
 # Функции работы с БД
 def save_user_attempts(user_id, paid_attempts, used_attempts):
     try:
@@ -108,243 +88,15 @@ def save_user_attempts(user_id, paid_attempts, used_attempts):
     except sqlite3.Error as e:
         logger.error(f"Database error: {e}")
 
-def add_payment_method(name, details):
-    try:
-        cursor.execute(
-            'INSERT INTO payment_methods (name, details) VALUES (?, ?)',
-            (name, details)
-        )
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        logger.error(f"Database error: {e}")
-        return False
-
-def update_payment_method(method_id, name, details):
-    try:
-        cursor.execute(
-            'UPDATE payment_methods SET name = ?, details = ? WHERE id = ?',
-            (name, details, method_id)
-        )
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        logger.error(f"Database error: {e}")
-        return False
-
-def toggle_payment_method(method_id):
-    try:
-        cursor.execute(
-            'UPDATE payment_methods SET is_active = NOT is_active WHERE id = ?',
-            (method_id,)
-        )
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        logger.error(f"Database error: {e}")
-        return False
-
-def delete_payment_method(method_id):
-    try:
-        cursor.execute(
-            'DELETE FROM payment_methods WHERE id = ?',
-            (method_id,)
-        )
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        logger.error(f"Database error: {e}")
-        return False
-
-def get_payment_method(method_id):
-    try:
-        cursor.execute(
-            'SELECT name, details FROM payment_methods WHERE id = ?',
-            (method_id,)
-        )
-        return cursor.fetchone()
-    except sqlite3.Error as e:
-        logger.error(f"Database error: {e}")
-        return None
-
 # Обработчики команд
 async def start(update: Update, context: CallbackContext):
-    if update.message.from_user.id == ADMIN_ID:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🛠 Управление ботом", callback_data="admin_panel")],
-            [InlineKeyboardButton("🎰 Начать игру", callback_data="play")]
-        ])
-        await update.message.reply_text(
-            "👋 Добро пожаловать, администратор!",
-            reply_markup=keyboard
-        )
-    else:
-        await update.message.reply_text(
-            "🎡 Добро пожаловать в <b>Колесо Фортуны</b>!\n\n"
-            "💎 Крутите колесо и выигрывайте призы!\n"
-            "💰 Попытки можно купить или выиграть в игре.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_start_keyboard()
-        )
-
-async def admin_panel(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Только администратор может использовать эту функцию.", show_alert=True)
-        return
-    
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Управление способами оплаты", callback_data="manage_payment_methods")],
-        [InlineKeyboardButton("🔙 В меню", callback_data="back_to_start")]
-    ])
-    
-    await query.message.edit_text(
-        "🛠 <b>Панель администратора</b>\n\n"
-        "Выберите действие:",
+    await update.message.reply_text(
+        "🎡 Добро пожаловать в <b>Колесо Фортуны</b>!\n\n"
+        "💎 Крутите колесо и выигрывайте призы!\n"
+        "💰 Попытки можно купить или выиграть в игре.",
         parse_mode=ParseMode.HTML,
-        reply_markup=keyboard
+        reply_markup=get_start_keyboard()
     )
-
-async def manage_payment_methods(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Только администратор может использовать эту функцию.", show_alert=True)
-        return
-    
-    await query.message.edit_text(
-        "💳 <b>Управление способами оплаты</b>\n\n"
-        "Список доступных способов оплаты:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=get_admin_payment_methods_keyboard()
-    )
-
-async def add_payment_method_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Только администратор может использовать эту функцию.", show_alert=True)
-        return
-    
-    context.user_data['adding_payment_method'] = True
-    await query.message.edit_text(
-        "Введите название нового способа оплаты:",
-        reply_markup=InlineKeyboardMarkup(
-            [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
-        )
-    )
-
-async def edit_payment_method_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Только администратор может использовать эту функцию.", show_alert=True)
-        return
-    
-    method_id = int(query.data.split('_')[-1])
-    context.user_data['editing_payment_method'] = method_id
-    await query.message.edit_text(
-        "Введите новое название и реквизиты в формате:\n\n"
-        "<code>Название\nРеквизиты</code>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
-        ])
-    )
-
-async def handle_payment_method_text(update: Update, context: CallbackContext):
-    if 'adding_payment_method' in context.user_data:
-        # Добавление нового способа оплаты
-        name = update.message.text
-        context.user_data['new_payment_name'] = name
-        context.user_data['adding_payment_method'] = False
-        context.user_data['adding_payment_details'] = True
-        
-        await update.message.reply_text(
-            "Теперь введите реквизиты для этого способа оплаты:",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
-            ])
-        )
-    elif 'adding_payment_details' in context.user_data:
-        # Сохранение нового способа оплаты
-        details = update.message.text
-        name = context.user_data['new_payment_name']
-        
-        if add_payment_method(name, details):
-            await update.message.reply_text(
-                f"✅ Способ оплаты <b>{name}</b> успешно добавлен!",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            await update.message.reply_text(
-                "❌ Произошла ошибка при добавлении способа оплаты"
-            )
-        
-        # Очищаем временные данные
-        context.user_data.pop('new_payment_name', None)
-        context.user_data.pop('adding_payment_details', None)
-        
-        # Возвращаемся к списку способов оплаты
-        await manage_payment_methods(update, context)
-    elif 'editing_payment_method' in context.user_data:
-        # Редактирование существующего способа оплаты
-        method_id = context.user_data['editing_payment_method']
-        try:
-            name, details = update.message.text.split('\n', 1)
-            if update_payment_method(method_id, name, details):
-                await update.message.reply_text(
-                    f"✅ Способ оплаты успешно обновлен!",
-                    parse_mode=ParseMode.HTML
-                )
-            else:
-                await update.message.reply_text(
-                    "❌ Произошла ошибка при обновлении способа оплаты"
-                )
-        except ValueError:
-            await update.message.reply_text(
-                "Неправильный формат. Введите название и реквизиты на отдельных строках."
-            )
-            return
-        
-        # Очищаем временные данные
-        context.user_data.pop('editing_payment_method', None)
-        
-        # Возвращаемся к списку способов оплаты
-        await manage_payment_methods(update, context)
-
-async def toggle_payment_method_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Только администратор может использовать эту функцию.", show_alert=True)
-        return
-    
-    method_id = int(query.data.split('_')[-1])
-    if toggle_payment_method(method_id):
-        await query.message.edit_reply_markup(reply_markup=get_admin_payment_methods_keyboard())
-    else:
-        await query.answer("Ошибка при изменении статуса способа оплаты", show_alert=True)
-
-async def delete_payment_method_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.from_user.id != ADMIN_ID:
-        await query.answer("Только администратор может использовать эту функцию.", show_alert=True)
-        return
-    
-    method_id = int(query.data.split('_')[-1])
-    if delete_payment_method(method_id):
-        await query.message.edit_reply_markup(reply_markup=get_admin_payment_methods_keyboard())
-    else:
-        await query.answer("Ошибка при удалении способа оплаты", show_alert=True)
 
 async def play(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -392,51 +144,322 @@ async def handle_payment_choice(update: Update, context: CallbackContext):
         context.chat_data["payment_choice"] = choice
         await query.message.edit_text(
             f"💳 Вы выбрали <b>{choice}</b> попыток за <b>{amounts[choice]} руб</b>.\n\n"
-            "Теперь выберите способ оплаты:",
+            "📤 Отправьте фото или скриншот чека об оплате.\n"
+            "⏳ После проверки администратором вам будут начислены попытки.",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_payment_methods_keyboard()
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Назад", callback_data="play")]
+            ])
         )
     else:
         await query.answer("Неверный выбор")
 
-async def show_payment_method(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
+async def handle_receipt(update: Update, context: CallbackContext):
+    user = update.effective_user
+    payment_choice = context.chat_data.get("payment_choice")
     
-    method_id = int(query.data.split("_")[1])
-    method = get_payment_method(method_id)
-    
-    if not method:
-        await query.answer("Способ оплаты не найден", show_alert=True)
+    if not payment_choice:
+        await update.message.reply_text("Сначала выберите количество попыток через меню.")
+        return
+        
+    if not (update.message.photo or update.message.document):
+        await update.message.reply_text("Пожалуйста, отправьте чек о платеже (фото или документ).")
         return
     
-    name, details = method
-    choice = context.chat_data.get("payment_choice")
-    amounts = {"1": 50, "3": 130, "5": 200, "10": 350}
-    amount = amounts.get(choice, 0)
-    
-    await query.message.edit_text(
-        f"💳 <b>Способ оплаты: {name}</b>\n\n"
-        f"💎 Количество попыток: {choice}\n"
-        f"💰 Сумма к оплате: {amount} руб\n\n"
-        f"<b>Реквизиты для оплаты:</b>\n"
-        f"{details}\n\n"
-        "После оплаты отправьте фото или скриншот чека в этот чат.",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(
-            [InlineKeyboardButton("🔙 Выбрать другой способ", callback_data="back_to_payment_methods")]
-        )
+    amount = {"1": 50, "3": 130, "5": 200, "10": 350}.get(payment_choice, 0)
+    caption = (
+        f"📤 Новый чек от @{user.username}\n"
+        f"🆔 ID: {user.id}\n"
+        f"💎 Попыток: {payment_choice}\n"
+        f"💰 Сумма: {amount} руб"
     )
 
-async def back_to_payment_methods(update: Update, context: CallbackContext):
+    try:
+        if update.message.photo:
+            msg = await context.bot.send_photo(
+                chat_id=ADMIN_ID,
+                photo=update.message.photo[-1].file_id,
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm:{user.id}:{user.username}:{payment_choice}"),
+                        InlineKeyboardButton("❌ Отклонить", callback_data=f"decline:{user.id}:{user.username}")
+                    ]
+                ])
+            )
+        else:
+            msg = await context.bot.send_document(
+                chat_id=ADMIN_ID,
+                document=update.message.document.file_id,
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm:{user.id}:{user.username}:{payment_choice}"),
+                        InlineKeyboardButton("❌ Отклонить", callback_data=f"decline:{user.id}:{user.username}")
+                    ]
+                ])
+            )
+        
+        await update.message.reply_text(
+            "📨 Ваш чек отправлен на проверку администратору.\n"
+            "⏳ Обычно проверка занимает не более 24 часов.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 В меню", callback_data="back_to_start")]
+            ])
+        )
+        
+        # Сохраняем ID сообщения для администратора
+        context.chat_data["admin_message_id"] = msg.message_id
+        
+    except Exception as e:
+        logger.error(f"Error sending receipt: {e}")
+        await update.message.reply_text("❌ Произошла ошибка при отправке чека. Попробуйте позже.")
+
+async def spin_wheel(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    cursor.execute('SELECT paid, used FROM user_attempts WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
+    
+    if not result or result[0] <= result[1]:
+        await query.answer("У вас нет доступных попыток!", show_alert=True)
+        return
+    
+    # Увеличиваем счетчик использованных попыток
+    new_used = result[1] + 1
+    save_user_attempts(user_id, result[0], new_used)
+    
+    # Символы для колеса и их веса
+    wheel_segments = ["🍒", "🍋", "🍊", "🍇", "🍉", "💰", "🎁", "⭐", "🍀"]
+    segment_weights = [15, 15, 15, 15, 10, 5, 5, 10, 10]
+    
+    # Выбираем случайный сегмент для остановки
+    selected_index = random.choices(range(len(wheel_segments)), weights=segment_weights, k=1)[0]
+    selected_segment = wheel_segments[selected_index]
+    
+    # Привязка сегментов к призам
+    prize_mapping = {
+        "🍒": "10 рублей",
+        "🍋": "20 рублей",
+        "🍊": "Бесплатная попытка",
+        "🍇": "5 рублей",
+        "🍉": "Конфетка",
+        "💰": "100 рублей",
+        "🎁": "Подарок",
+        "⭐": "5 бесплатных попыток",
+        "🍀": "Скидка 10% на след. игру"
+    }
+    prize = prize_mapping.get(selected_segment, "Ничего")
+    
+    # Создаем сообщение с анимацией
+    message = await query.message.reply_text(
+        "🎡 <b>Колесо Фортуны</b>\n\n"
+        f"{' '.join(wheel_segments)}\n"
+        f"{' ' * 8}👇\n\n"
+        "🌀 Крутим колесо...",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Параметры анимации
+    spin_duration = 3  # Общая длительность в секундах
+    frames = 15  # Количество кадров анимации
+    slowdown_start = 10  # Кадр, с которого начинаем замедление
+    
+    # Анимация вращения с замедлением
+    for frame in range(frames):
+        # Вращаем колесо
+        wheel_segments.insert(0, wheel_segments.pop())
+        
+        # Рассчитываем задержку с замедлением в конце
+        if frame < slowdown_start:
+            delay = 0.15  # Быстрое вращение
+        else:
+            delay = 0.15 + (frame - slowdown_start) * 0.1  # Постепенное замедление
+        
+        # Обновляем сообщение
+        await message.edit_text(
+            "🎡 <b>Колесо Фортуны</b>\n\n"
+            f"{' '.join(wheel_segments)}\n"
+            f"{' ' * 8}👇\n\n"
+            f"{'🌀' * (frame % 3 + 1)} Крутим колесо...",
+            parse_mode=ParseMode.HTML
+        )
+        await asyncio.sleep(delay)
+    
+    # Останавливаем на выбранном сегменте
+    while wheel_segments[-1] != selected_segment:
+        wheel_segments.insert(0, wheel_segments.pop())
+        await message.edit_text(
+            "🎡 <b>Колесо Фортуны</b>\n\n"
+            f"{' '.join(wheel_segments)}\n"
+            f"{' ' * 8}👇\n\n"
+            "🛑 Останавливается...",
+            parse_mode=ParseMode.HTML
+        )
+        await asyncio.sleep(0.3)
+    
+    # Обработка призов
+    bonus_text = ""
+    if prize == "Бесплатная попытка":
+        cursor.execute('UPDATE user_attempts SET paid = paid + 1 WHERE user_id = ?', (user_id,))
+        conn.commit()
+        bonus_text = "\n\n🎁 Вам добавлена 1 бесплатная попытка!"
+    elif prize == "5 бесплатных попыток":
+        cursor.execute('UPDATE user_attempts SET paid = paid + 5 WHERE user_id = ?', (user_id,))
+        conn.commit()
+        bonus_text = "\n\n🎁 Вам добавлено 5 бесплатных попыток!"
+    
+    # Получаем обновленное количество попыток
+    cursor.execute('SELECT paid, used FROM user_attempts WHERE user_id = ?', (user_id,))
+    updated_attempts = cursor.fetchone()
+    remaining = updated_attempts[0] - updated_attempts[1]
+    
+    # Финальное сообщение
+    await message.edit_text(
+        f"🎉 <b>Поздравляем!</b>\n\n"
+        f"🏆 Вы выиграли: <b>{prize}</b>{bonus_text}\n\n"
+        f"🔄 Осталось попыток: <b>{remaining}</b>\n\n"
+        "Хотите крутить еще?",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_play_keyboard(user_id)
+    )
+    
+    # Удаляем исходное сообщение с кнопкой
+    try:
+        await query.message.delete()
+    except:
+        pass
+
+async def confirm_payment(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("Только администратор может подтверждать платежи.", show_alert=True)
+        return
+        
+    _, user_id, username, payment_choice = query.data.split(":")
+    user_id = int(user_id)
+    new_attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
+    
+    try:
+        # Получаем текущее количество попыток
+        cursor.execute('SELECT paid, used FROM user_attempts WHERE user_id = ?', (user_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            current_paid, current_used = result
+            # Суммируем новые попытки с существующими
+            total_paid = current_paid + new_attempts
+            # Сохраняем общее количество оплаченных попыток
+            save_user_attempts(user_id, total_paid, current_used)
+            remaining_attempts = total_paid - current_used
+        else:
+            # Если запись не существует, создаем новую
+            save_user_attempts(user_id, new_attempts, 0)
+            remaining_attempts = new_attempts
+        
+        # Уведомляем пользователя
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"✅ <b>Ваш платеж подтвержден!</b>\n\n"
+                 f"💎 Вам добавлено <b>{new_attempts}</b> попыток.\n"
+                 f"🔄 Теперь у вас <b>{remaining_attempts}</b> доступных попыток.\n"
+                 f"🎯 Можете крутить колесо фортуны!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_play_keyboard(user_id)
+        )
+        
+        # Удаляем оригинальное сообщение с чеком
+        await query.message.delete()
+        
+        # Отправляем подтверждение администратору
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"✅ Платеж подтвержден\n\n"
+                 f"👤 Пользователь: @{username} (ID: {user_id})\n"
+                 f"💎 Добавлено попыток: {new_attempts}\n"
+                 f"🔄 Всего доступно: {remaining_attempts}\n"
+                 f"🕒 Время: {query.message.date.strftime('%Y-%m-%d %H:%M')}",
+            reply_markup=None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error confirming payment: {e}")
+        await query.answer("Ошибка при подтверждении платежа", show_alert=True)
+
+async def decline_payment(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("Только администратор может отклонять платежи.", show_alert=True)
+        return
+        
+    _, user_id, username = query.data.split(":")
+    user_id = int(user_id)
+    
+    try:
+        # Уведомляем пользователя
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="❌ <b>Ваш платеж был отклонен администратором</b>\n\n"
+                 "Возможные причины:\n"
+                 "• Неправильный чек\n"
+                 "• Несоответствующая сумма\n"
+                 "• Подозрительная активность\n\n"
+                 "Если вы считаете это ошибкой, свяжитесь с поддержкой.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_start_keyboard()
+        )
+        
+        # Удаляем оригинальное сообщение с чеком
+        await query.message.delete()
+        
+        # Отправляем уведомление администратору
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"❌ Платеж отклонен\n\n"
+                 f"👤 Пользователь: @{username} (ID: {user_id})\n"
+                 f"🕒 Время: {query.message.date.strftime('%Y-%m-%d %H:%M')}",
+            reply_markup=None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error declining payment: {e}")
+        await query.answer("Ошибка при отклонении платежа", show_alert=True)
+
+async def back_to_start(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
     await query.message.edit_text(
-        "💳 Выберите способ оплаты:",
-        reply_markup=get_payment_methods_keyboard()
+        "🎡 Добро пожаловать в <b>Колесо Фортуны</b>!\n\n"
+        "💎 Крутите колесо и выигрывайте призы!\n"
+        "💰 Попытки можно купить или выиграть в игре.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_start_keyboard()
     )
 
-# ... (остальные функции остаются без изменений, как в предыдущем коде)
+async def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "play":
+        await play(update, context)
+    elif query.data.startswith("pay_"):
+        await handle_payment_choice(update, context)
+    elif query.data == "spin_wheel":
+        await spin_wheel(update, context)
+    elif query.data == "check_attempts":
+        await check_attempts(update, context)
+    elif query.data.startswith("confirm:"):
+        await confirm_payment(update, context)
+    elif query.data.startswith("decline:"):
+        await decline_payment(update, context)
+    elif query.data == "back_to_start":
+        await back_to_start(update, context)
 
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
@@ -446,18 +469,9 @@ def main():
     
     # Обработчики callback-кнопок
     application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
-    application.add_handler(CallbackQueryHandler(manage_payment_methods, pattern="^manage_payment_methods$"))
-    application.add_handler(CallbackQueryHandler(add_payment_method_handler, pattern="^add_payment_method$"))
-    application.add_handler(CallbackQueryHandler(edit_payment_method_handler, pattern="^edit_method_"))
-    application.add_handler(CallbackQueryHandler(toggle_payment_method_handler, pattern="^admin_method_"))
-    application.add_handler(CallbackQueryHandler(delete_payment_method_handler, pattern="^delete_method_"))
-    application.add_handler(CallbackQueryHandler(show_payment_method, pattern="^method_"))
-    application.add_handler(CallbackQueryHandler(back_to_payment_methods, pattern="^back_to_payment_methods$"))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_method_text))
     
     # Запуск бота
     application.run_polling()
