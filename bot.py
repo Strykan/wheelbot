@@ -282,8 +282,8 @@ async def handle_payment_method_text(update: Update, context: CallbackContext):
             await update.message.reply_text("Название не может быть пустым. Попробуйте снова.")
             return
             
-        if len(name) > 150:
-            await update.message.reply_text("Название слишком длинное (макс. 150 символов).")
+        if len(name) > 50:
+            await update.message.reply_text("Название слишком длинное (макс. 50 символов).")
             return
             
         context.user_data['new_payment_name'] = name
