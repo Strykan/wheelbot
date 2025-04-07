@@ -257,7 +257,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
     message = await query.message.reply_text(
         "🎡 <b>Колесо Фортуны</b>\n\n"
         f"{' '.join(wheel_segments)}\n"
-        f"{' ' * 8}👇\n\n"
+        f"{' ' * 8}⬆️\n\n"
         "🌀 Крутим колесо...",
         parse_mode=ParseMode.HTML
     )
