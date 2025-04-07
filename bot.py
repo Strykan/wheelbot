@@ -231,74 +231,15 @@ async def spin_wheel(update: Update, context: CallbackContext):
     new_used = result[1] + 1
     save_user_attempts(user_id, result[0], new_used)
     
-    # Символы для колеса и их веса для случайного выбора
-    wheel_data = [
-        ("🍒", 15),
-        ("🍋", 15),
-        ("🍊", 15),
-        ("🍇", 15),
-        ("🍉", 10),
-        ("💰", 5),
-        ("🎁", 5),
-        ("⭐", 10),
-        ("🍀", 10)
-    ]
-    wheel_segments = [item[0] for item in wheel_data]
-    weights = [item[1] for item in wheel_data]
+    # Символы для колеса и их веса
+    wheel_segments = ["🍒", "🍋", "🍊", "🍇", "🍉", "💰", "🎁", "⭐", "🍀"]
+    segment_weights = [15, 15, 15, 15, 10, 5, 5, 10, 10]
     
-    # Выбираем случайный сегмент для остановки с учетом весов
-    selected_index = random.choices(range(len(wheel_segments)), weights=weights, k=1)[0]
+    # Выбираем случайный сегмент для остановки
+    selected_index = random.choices(range(len(wheel_segments)), weights=segment_weights, k=1)[0]
+    selected_segment = wheel_segments[selected_index]
     
-    # Создаем начальное сообщение
-    message = await query.message.reply_text(
-        "🎡 <b>Колесо Фортуны</b>\n\n"
-        f"{' '.join(wheel_segments)}\n"
-        f"{' ' * 8}👇\n\n"
-        "🌀 Крутим колесо...",
-        parse_mode=ParseMode.HTML
-    )
-    
-    # Параметры анимации
-    spin_duration = 3  # секунды
-    frames_per_second = 10
-    total_frames = spin_duration * frames_per_second
-    
-    # Анимация с ускорением и замедлением
-    for frame in range(total_frames):
-        # Плавное изменение скорости
-        if frame < total_frames / 3:
-            delay = 0.1  # Быстрое вращение в начале
-        elif frame < total_frames * 2/3:
-            delay = 0.2
-        else:
-            delay = 0.3 + (frame - total_frames * 2/3) * 0.1  # Замедление
-        
-        # Вращаем колесо
-        wheel_segments.insert(0, wheel_segments.pop())
-        
-        # Обновляем сообщение
-        await message.edit_text(
-            "🎡 <b>Колесо Фортуны</b>\n\n"
-            f"{' '.join(wheel_segments)}\n"
-            f"{' ' * 8}👇\n\n"
-            f"{'🌀' * (frame % 3 + 1)} Крутим колесо...",
-            parse_mode=ParseMode.HTML
-        )
-        await asyncio.sleep(delay)
-    
-    # Останавливаем колесо на выбранном сегменте
-    while wheel_segments[-1] != wheel_segments[selected_index]:
-        wheel_segments.insert(0, wheel_segments.pop())
-        await message.edit_text(
-            "🎡 <b>Колесо Фортуны</b>\n\n"
-            f"{' '.join(wheel_segments)}\n"
-            f"{' ' * 8}👇\n\n"
-            "🌀 Останавливается...",
-            parse_mode=ParseMode.HTML
-        )
-        await asyncio.sleep(0.3)
-    
-    # Определяем выигрыш на основе выбранного сегмента
+    # Привязка сегментов к призам
     prize_mapping = {
         "🍒": "10 рублей",
         "🍋": "20 рублей",
@@ -310,9 +251,56 @@ async def spin_wheel(update: Update, context: CallbackContext):
         "⭐": "5 бесплатных попыток",
         "🍀": "Скидка 10% на след. игру"
     }
-    prize = prize_mapping.get(wheel_segments[selected_index], "Ничего")
+    prize = prize_mapping.get(selected_segment, "Ничего")
     
-    # Обработка специальных призов
+    # Создаем сообщение с анимацией
+    message = await query.message.reply_text(
+        "🎡 <b>Колесо Фортуны</b>\n\n"
+        f"{' '.join(wheel_segments)}\n"
+        f"{' ' * 8}👇\n\n"
+        "🌀 Крутим колесо...",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Параметры анимации
+    spin_duration = 3  # Общая длительность в секундах
+    frames = 15  # Количество кадров анимации
+    slowdown_start = 10  # Кадр, с которого начинаем замедление
+    
+    # Анимация вращения с замедлением
+    for frame in range(frames):
+        # Вращаем колесо
+        wheel_segments.insert(0, wheel_segments.pop())
+        
+        # Рассчитываем задержку с замедлением в конце
+        if frame < slowdown_start:
+            delay = 0.15  # Быстрое вращение
+        else:
+            delay = 0.15 + (frame - slowdown_start) * 0.1  # Постепенное замедление
+        
+        # Обновляем сообщение
+        await message.edit_text(
+            "🎡 <b>Колесо Фортуны</b>\n\n"
+            f"{' '.join(wheel_segments)}\n"
+            f"{' ' * 8}👇\n\n"
+            f"{'🌀' * (frame % 3 + 1)} Крутим колесо...",
+            parse_mode=ParseMode.HTML
+        )
+        await asyncio.sleep(delay)
+    
+    # Останавливаем на выбранном сегменте
+    while wheel_segments[-1] != selected_segment:
+        wheel_segments.insert(0, wheel_segments.pop())
+        await message.edit_text(
+            "🎡 <b>Колесо Фортуны</b>\n\n"
+            f"{' '.join(wheel_segments)}\n"
+            f"{' ' * 8}👇\n\n"
+            "🛑 Останавливается...",
+            parse_mode=ParseMode.HTML
+        )
+        await asyncio.sleep(0.3)
+    
+    # Обработка призов
     bonus_text = ""
     if prize == "Бесплатная попытка":
         cursor.execute('UPDATE user_attempts SET paid = paid + 1 WHERE user_id = ?', (user_id,))
@@ -326,23 +314,24 @@ async def spin_wheel(update: Update, context: CallbackContext):
     # Получаем обновленное количество попыток
     cursor.execute('SELECT paid, used FROM user_attempts WHERE user_id = ?', (user_id,))
     updated_attempts = cursor.fetchone()
-    remaining_attempts = updated_attempts[0] - updated_attempts[1]
+    remaining = updated_attempts[0] - updated_attempts[1]
     
-    # Финальное сообщение с результатом
+    # Финальное сообщение
     await message.edit_text(
         f"🎉 <b>Поздравляем!</b>\n\n"
-        f"🏆 Ваш выигрыш: <b>{prize}</b>{bonus_text}\n\n"
-        f"🔄 Осталось попыток: <b>{remaining_attempts}</b>\n\n"
+        f"🏆 Вы выиграли: <b>{prize}</b>{bonus_text}\n\n"
+        f"🔄 Осталось попыток: <b>{remaining}</b>\n\n"
         "Хотите крутить еще?",
         parse_mode=ParseMode.HTML,
         reply_markup=get_play_keyboard(user_id)
     )
     
-    # Удаляем оригинальное сообщение с кнопкой "Крутить колесо"
+    # Удаляем исходное сообщение с кнопкой
     try:
         await query.message.delete()
     except:
         pass
+
 async def confirm_payment(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
