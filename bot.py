@@ -102,7 +102,6 @@ async def handle_payment_choice(update: Update, context: CallbackContext):
             f"Вы выбрали {choice} попыток за {price} рублей.\n"
             "После перевода отправьте мне квитанцию о платеже, и я дам вам попытки!",
         )
-        # Сохраняем выбранное количество попыток в context.user_data
         context.user_data["payment_choice"] = choice
     else:
         await update.callback_query.message.reply_text("Неверный выбор.")
@@ -150,7 +149,6 @@ async def confirm_payment(update: Update, context: CallbackContext):
         client_id = int(update.callback_query.data.split(":")[1])
         logger.info(f"Подтверждение оплаты для клиента с ID: {client_id}")
 
-        # Получаем выбранное количество попыток из context.user_data
         payment_choice = context.user_data.get("payment_choice", None)
 
         if payment_choice:
@@ -158,7 +156,7 @@ async def confirm_payment(update: Update, context: CallbackContext):
             logger.info(f"Выбранное количество попыток: {attempts}")
             
             if attempts > 0:
-                save_user_attempts(client_id, attempts, 0)  # Сохраняем данные о попытках в базе данных
+                save_user_attempts(client_id, attempts, 0)
                 await context.bot.send_message(
                     chat_id=client_id,
                     text=f"Оплата прошла успешно! Теперь у вас есть {attempts} попыток.",
@@ -198,7 +196,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
         paid_attempts = user_data['paid'] - 1
         save_user_attempts(user_id, paid_attempts, used_attempts)
 
-        result = "Поздравляем, вы выиграли 100 рублей!"  # Пример результата
+        result = "Поздравляем, вы выиграли 100 рублей!"  
 
         await update.callback_query.message.reply_text(
             f"Колесо крутано! Результат: {result}",
@@ -216,7 +214,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(play, pattern="play"))
     application.add_handler(CallbackQueryHandler(handle_payment_choice, pattern="pay_"))
-    application.add_handler(MessageHandler(filters.Photo | filters.Document.ALL, handle_receipt))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.DOCUMENT, handle_receipt))
     application.add_handler(CallbackQueryHandler(confirm_payment, pattern="confirm_payment"))
     application.add_handler(CallbackQueryHandler(decline_payment, pattern="decline_payment"))
     application.add_handler(CallbackQueryHandler(spin_wheel, pattern="spin_wheel"))
