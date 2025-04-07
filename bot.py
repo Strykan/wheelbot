@@ -233,9 +233,9 @@ async def add_payment_method_handler(update: Update, context: CallbackContext):
     context.user_data['adding_payment_method'] = True
     await query.message.edit_text(
         "Введите название нового способа оплаты:",
-        reply_markup=InlineKeyboardMarkup(
+        reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
-        )
+        ])
     )
 
 async def edit_payment_method_handler(update: Update, context: CallbackContext):
@@ -252,9 +252,9 @@ async def edit_payment_method_handler(update: Update, context: CallbackContext):
         "Введите новое название и реквизиты в формате:\n\n"
         "<code>Название\nРеквизиты</code>",
         parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(
+        reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
-        )
+        ])
     )
 
 async def handle_payment_method_text(update: Update, context: CallbackContext):
@@ -267,9 +267,9 @@ async def handle_payment_method_text(update: Update, context: CallbackContext):
         
         await update.message.reply_text(
             "Теперь введите реквизиты для этого способа оплаты:",
-            reply_markup=InlineKeyboardMarkup(
+            reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 Отмена", callback_data="manage_payment_methods")]
-            )
+            ])
         )
     elif 'adding_payment_details' in context.user_data:
         # Сохранение нового способа оплаты
