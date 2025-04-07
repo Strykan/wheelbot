@@ -12,19 +12,27 @@ class Database:
         self.pool = None
 
     async def connect(self):
-        """Установка соединения с PostgreSQL"""
-        try:
-            self.pool = await asyncpg.create_pool(
-                dsn=os.getenv('DATABASE_URL'),
-                min_size=1,
-                max_size=10,
-                timeout=30
-            )
-            await self.create_tables()
-            logger.info("Database connection established")
-        except Exception as e:
-            logger.error(f"Database connection error: {e}")
-            raise
+    """Установка соединения с PostgreSQL"""
+    try:
+        # Получаем URL из переменных окружения Railway
+        database_url = os.getenv('DATABASE_URL')
+        
+        # Если используется Railway, преобразуем URL
+        if 'railway' in database_url:
+            database_url = database_url.replace('postgresql://', 'postgres://')
+        
+        self.pool = await asyncpg.create_pool(
+            dsn=database_url,
+            min_size=1,
+            max_size=10,
+            timeout=30,
+            ssl='require'  # Важно для Railway
+        )
+        await self.create_tables()
+        logger.info("Database connection established")
+    except Exception as e:
+        logger.error(f"Database connection error: {e}")
+        raise
 
     async def create_tables(self):
         """Создание таблиц в PostgreSQL"""

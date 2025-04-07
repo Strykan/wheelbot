@@ -160,18 +160,20 @@ async def spin_wheel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ... (добавьте остальные обработчики по аналогии)
 
 async def main():
-    """Запуск бота"""
-    await init_db()
-    
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Регистрация обработчиков
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
-    
-    # Запуск
-    await application.run_polling()
+    try:
+        await init_db()
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Регистрация обработчиков
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button))
+        application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_receipt))
+        
+        logger.info("Bot starting...")
+        await application.run_polling()
+    except Exception as e:
+        logger.error(f"Bot crashed: {e}")
+        raise
 
 if __name__ == '__main__':
     asyncio.run(main())
