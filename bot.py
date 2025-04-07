@@ -205,7 +205,7 @@ async def handle_receipt(update: Update, context: CallbackContext):
             "⏳ Обычно проверка занимает не более 24 часов.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 В меню", callback_data="back_to_start")]
-            )
+            ])
         )
         
         # Сохраняем ID сообщения для администратора
