@@ -78,7 +78,7 @@ def get_payment_methods_keyboard():
     methods = cursor.fetchall()
     keyboard = []
     for method in methods:
-        keyboard.append([InlineKeyboardButton(method[1], callback_data=f"method_{method[0]}"])
+        keyboard.append([InlineKeyboardButton(method[1], callback_data=f"method_{method[0]}")])
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_start")])
     return InlineKeyboardMarkup(keyboard)
 
