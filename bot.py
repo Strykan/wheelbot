@@ -423,7 +423,7 @@ async def show_payment_method(update: Update, context: CallbackContext):
         f"{details}\n\n"
         "После оплаты отправьте фото или скриншот чека в этот чат.",
         parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup([
+        reply_markup=InlineKeyboardMarkup(
             [InlineKeyboardButton("🔙 Выбрать другой способ", callback_data="back_to_payment_methods")]
         )
     )
