@@ -257,7 +257,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
     message = await query.message.reply_text(
         "🎡 <b>Колесо Фортуны</b>\n\n"
         f"{' '.join(wheel_segments)}\n"
-        f"{' ' * 8}⬆️\n\n"
+        f"{' ' * 8}🔺\n\n"
         "🌀 Крутим колесо...",
         parse_mode=ParseMode.HTML
     )
@@ -282,7 +282,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
         await message.edit_text(
             "🎡 <b>Колесо Фортуны</b>\n\n"
             f"{' '.join(wheel_segments)}\n"
-            f"{' ' * 8}⬆️\n\n"
+            f"{' ' * 8}🔺\n\n"
             f"{'🌀' * (frame % 3 + 1)} Крутим колесо...",
             parse_mode=ParseMode.HTML
         )
@@ -294,7 +294,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
         await message.edit_text(
             "🎡 <b>Колесо Фортуны</b>\n\n"
             f"{' '.join(wheel_segments)}\n"
-            f"{' ' * 8}⬆️\n\n"
+            f"{' ' * 8}🔺\n\n"
             "🛑 Останавливается...",
             parse_mode=ParseMode.HTML
         )
@@ -357,12 +357,16 @@ async def confirm_payment(update: Update, context: CallbackContext):
             reply_markup=get_play_keyboard(user_id)
         )
         
-        # Редактируем сообщение у администратора
-        await query.message.edit_text(
-            f"✅ Платеж подтвержден\n\n"
-            f"👤 Пользователь: {user_id}\n"
-            f"💎 Попыток: {attempts}\n"
-            f"🕒 {query.message.date.strftime('%Y-%m-%d %H:%M')}",
+        # Удаляем оригинальное сообщение с чеком
+        await query.message.delete()
+        
+        # Отправляем подтверждение администратору
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"✅ Платеж подтвержден\n\n"
+                 f"👤 Пользователь: {user_id}\n"
+                 f"💎 Попыток: {attempts}\n"
+                 f"🕒 {query.message.date.strftime('%Y-%m-%d %H:%M')}",
             reply_markup=None
         )
         
@@ -395,18 +399,21 @@ async def decline_payment(update: Update, context: CallbackContext):
             reply_markup=get_start_keyboard()
         )
         
-        # Редактируем сообщение у администратора
-        await query.message.edit_text(
-            f"❌ Платеж отклонен\n\n"
-            f"👤 Пользователь: {user_id}\n"
-            f"🕒 {query.message.date.strftime('%Y-%m-%d %H:%M')}",
+        # Удаляем оригинальное сообщение с чеком
+        await query.message.delete()
+        
+        # Отправляем уведомление администратору
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"❌ Платеж отклонен\n\n"
+                 f"👤 Пользователь: {user_id}\n"
+                 f"🕒 {query.message.date.strftime('%Y-%m-%d %H:%M')}",
             reply_markup=None
         )
         
     except Exception as e:
         logger.error(f"Error declining payment: {e}")
         await query.answer("Ошибка при отклонении платежа", show_alert=True)
-
 async def back_to_start(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
