@@ -182,8 +182,8 @@ async def handle_receipt(update: Update, context: CallbackContext):
                 caption=caption,
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm:{user.id}:{payment_choice}"),
-                        InlineKeyboardButton("❌ Отклонить", callback_data=f"decline:{user.id}")
+                        InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm:{user.id}:{user.username}:{payment_choice}"),
+                        InlineKeyboardButton("❌ Отклонить", callback_data=f"decline:{user.id}:{user.username}")
                     ]
                 ])
             )
@@ -194,8 +194,8 @@ async def handle_receipt(update: Update, context: CallbackContext):
                 caption=caption,
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm:{user.id}:{payment_choice}"),
-                        InlineKeyboardButton("❌ Отклонить", callback_data=f"decline:{user.id}")
+                        InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm:{user.id}:{user.username}:{payment_choice}"),
+                        InlineKeyboardButton("❌ Отклонить", callback_data=f"decline:{user.id}:{user.username}")
                     ]
                 ])
             )
@@ -257,7 +257,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
     message = await query.message.reply_text(
         "🎡 <b>Колесо Фортуны</b>\n\n"
         f"{' '.join(wheel_segments)}\n"
-        f"{' ' * 8}🔺\n\n"
+        f"{' ' * 8}👇\n\n"
         "🌀 Крутим колесо...",
         parse_mode=ParseMode.HTML
     )
@@ -282,7 +282,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
         await message.edit_text(
             "🎡 <b>Колесо Фортуны</b>\n\n"
             f"{' '.join(wheel_segments)}\n"
-            f"{' ' * 8}🔺\n\n"
+            f"{' ' * 8}👇\n\n"
             f"{'🌀' * (frame % 3 + 1)} Крутим колесо...",
             parse_mode=ParseMode.HTML
         )
@@ -294,7 +294,7 @@ async def spin_wheel(update: Update, context: CallbackContext):
         await message.edit_text(
             "🎡 <b>Колесо Фортуны</b>\n\n"
             f"{' '.join(wheel_segments)}\n"
-            f"{' ' * 8}🔺\n\n"
+            f"{' ' * 8}👇\n\n"
             "🛑 Останавливается...",
             parse_mode=ParseMode.HTML
         )
@@ -340,19 +340,34 @@ async def confirm_payment(update: Update, context: CallbackContext):
         await query.answer("Только администратор может подтверждать платежи.", show_alert=True)
         return
         
-    _, user_id, payment_choice = query.data.split(":")
+    _, user_id, username, payment_choice = query.data.split(":")
     user_id = int(user_id)
-    attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
+    new_attempts = {"1": 1, "3": 3, "5": 5, "10": 10}.get(payment_choice, 0)
     
     try:
-        save_user_attempts(user_id, attempts, 0)
+        # Получаем текущее количество попыток
+        cursor.execute('SELECT paid, used FROM user_attempts WHERE user_id = ?', (user_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            current_paid, current_used = result
+            # Суммируем новые попытки с существующими
+            total_paid = current_paid + new_attempts
+            # Сохраняем общее количество оплаченных попыток
+            save_user_attempts(user_id, total_paid, current_used)
+            remaining_attempts = total_paid - current_used
+        else:
+            # Если запись не существует, создаем новую
+            save_user_attempts(user_id, new_attempts, 0)
+            remaining_attempts = new_attempts
         
         # Уведомляем пользователя
         await context.bot.send_message(
             chat_id=user_id,
             text=f"✅ <b>Ваш платеж подтвержден!</b>\n\n"
-                 f"💎 Вам начислено <b>{attempts}</b> попыток.\n"
-                 f"🎯 Теперь вы можете крутить колесо фортуны!",
+                 f"💎 Вам добавлено <b>{new_attempts}</b> попыток.\n"
+                 f"🔄 Теперь у вас <b>{remaining_attempts}</b> доступных попыток.\n"
+                 f"🎯 Можете крутить колесо фортуны!",
             parse_mode=ParseMode.HTML,
             reply_markup=get_play_keyboard(user_id)
         )
@@ -364,9 +379,10 @@ async def confirm_payment(update: Update, context: CallbackContext):
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=f"✅ Платеж подтвержден\n\n"
-                 f"👤 Пользователь: {user_id}\n"
-                 f"💎 Попыток: {attempts}\n"
-                 f"🕒 {query.message.date.strftime('%Y-%m-%d %H:%M')}",
+                 f"👤 Пользователь: @{username} (ID: {user_id})\n"
+                 f"💎 Добавлено попыток: {new_attempts}\n"
+                 f"🔄 Всего доступно: {remaining_attempts}\n"
+                 f"🕒 Время: {query.message.date.strftime('%Y-%m-%d %H:%M')}",
             reply_markup=None
         )
         
@@ -382,7 +398,7 @@ async def decline_payment(update: Update, context: CallbackContext):
         await query.answer("Только администратор может отклонять платежи.", show_alert=True)
         return
         
-    _, user_id = query.data.split(":")
+    _, user_id, username = query.data.split(":")
     user_id = int(user_id)
     
     try:
@@ -406,14 +422,15 @@ async def decline_payment(update: Update, context: CallbackContext):
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=f"❌ Платеж отклонен\n\n"
-                 f"👤 Пользователь: {user_id}\n"
-                 f"🕒 {query.message.date.strftime('%Y-%m-%d %H:%M')}",
+                 f"👤 Пользователь: @{username} (ID: {user_id})\n"
+                 f"🕒 Время: {query.message.date.strftime('%Y-%m-%d %H:%M')}",
             reply_markup=None
         )
         
     except Exception as e:
         logger.error(f"Error declining payment: {e}")
         await query.answer("Ошибка при отклонении платежа", show_alert=True)
+
 async def back_to_start(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
