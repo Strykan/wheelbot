@@ -3,6 +3,7 @@ import asyncpg
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
+import random
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -12,27 +13,27 @@ class Database:
         self.pool = None
 
     async def connect(self):
-    """Установка соединения с PostgreSQL"""
-    try:
-        # Получаем URL из переменных окружения Railway
-        database_url = os.getenv('DATABASE_URL')
-        
-        # Если используется Railway, преобразуем URL
-        if 'railway' in database_url:
-            database_url = database_url.replace('postgresql://', 'postgres://')
-        
-        self.pool = await asyncpg.create_pool(
-            dsn=database_url,
-            min_size=1,
-            max_size=10,
-            timeout=30,
-            ssl='require'  # Важно для Railway
-        )
-        await self.create_tables()
-        logger.info("Database connection established")
-    except Exception as e:
-        logger.error(f"Database connection error: {e}")
-        raise
+        """Установка соединения с PostgreSQL"""
+        try:
+            database_url = os.getenv('DATABASE_URL')
+            
+            # Для Railway преобразуем URL при необходимости
+            if database_url and 'railway' in database_url:
+                database_url = database_url.replace('postgresql://', 'postgres://')
+            
+            self.pool = await asyncpg.create_pool(
+                dsn=database_url,
+                min_size=1,
+                max_size=10,
+                timeout=30,
+                ssl='require'
+            )
+            await self.create_tables()
+            logger.info("Database connection established")
+            return True
+        except Exception as e:
+            logger.error(f"Database connection error: {e}")
+            raise
 
     async def create_tables(self):
         """Создание таблиц в PostgreSQL"""
@@ -108,14 +109,12 @@ class Database:
         """Обновление попыток пользователя"""
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                # Вставка или игнорирование существующей записи
                 await conn.execute('''
                     INSERT INTO user_attempts (user_id) 
                     VALUES ($1)
                     ON CONFLICT (user_id) DO NOTHING
                 ''', user_id)
                 
-                # Динамическое построение запроса
                 updates = []
                 params = []
                 param_count = 1
@@ -174,7 +173,6 @@ class Database:
         """Обработка реферала"""
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                # Проверка существования реферального кода
                 referrer = await conn.fetchrow(
                     'SELECT user_id FROM user_attempts WHERE referral_code = $1',
                     referral_code
@@ -184,13 +182,11 @@ class Database:
                 
                 referrer_id = referrer['user_id']
                 
-                # Обновление данных у реферала
                 await conn.execute(
                     'UPDATE user_attempts SET referred_by = $1 WHERE user_id = $2',
                     referrer_id, user_id
                 )
                 
-                # Начисление бонусов
                 await conn.execute('''
                     UPDATE user_attempts 
                     SET referrals_count = referrals_count + 1,
